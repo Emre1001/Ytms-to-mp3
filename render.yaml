@@ -1,0 +1,17 @@
+# Render.com Blueprint – deploys the app straight from this repo via Docker.
+# The Dockerfile already includes ffmpeg, which yt-dlp needs for MP3 conversion.
+services:
+  - type: web
+    name: ytms-to-mp3
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      # MP3 default bitrate (the UI can still override per download).
+      - key: AUDIO_BITRATE
+        value: "192"
+      # Max number of tracks allowed in a single ZIP download.
+      - key: MAX_ZIP_TRACKS
+        value: "100"
