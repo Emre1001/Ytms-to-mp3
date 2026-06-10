@@ -52,6 +52,43 @@ docker run --rm -p 5000:5000 ytms-to-mp3
 
 Dann öffnen: <http://localhost:5000>
 
+### Online stellen – Nutzung ganz ohne eigenen Rechner (Render.com)
+
+Wenn du keinen Rechner hast und die Seite einfach vom Handy aus aufrufen
+willst, kannst du sie kostenlos bei **Render.com** hosten. Die nötige Konfig
+(`render.yaml` + `Dockerfile` mit ffmpeg) liegt bereits im Repo. Einrichtung
+komplett im Handy-Browser:
+
+1. Auf <https://render.com> mit dem **GitHub-Konto** anmelden.
+2. **New → Blueprint** wählen und das Repo `Emre1001/Ytms-to-mp3` verbinden.
+3. Render liest die `render.yaml` automatisch → auf **Apply / Create** tippen.
+4. Nach dem Build bekommst du eine feste URL wie
+   `https://ytms-to-mp3.onrender.com` – die kannst du am Handy als Lesezeichen
+   oder Startbildschirm-Symbol speichern.
+
+> ⏱️ Im kostenlosen Tarif „schläft" der Dienst nach Inaktivität ein; der erste
+> Aufruf danach dauert ca. 30 Sekunden, bis er wieder hochgefahren ist.
+
+> ⚠️ **Wichtige Einschränkung:** YouTube blockiert Downloads von
+> Rechenzentrums-IPs (also von Hostern wie Render) häufig mit der Meldung
+> „Sign in to confirm you're not a bot". Es kann daher sein, dass Downloads
+> in der Cloud fehlschlagen. Umgehen lässt sich das nur, indem man eigene
+> YouTube-Cookies hinterlegt (siehe yt-dlp `--cookies`). Zuverlässig
+> funktioniert das Tool am ehesten in einem privaten Netz.
+
+### Vom Handy aus nutzen, wenn du doch einen Rechner im selben WLAN hast (Android/iOS)
+
+Das UI ist responsiv und funktioniert im mobilen Browser. Damit das Handy den
+Server erreicht, müssen Handy und Rechner im **selben WLAN** sein:
+
+1. IP-Adresse des Rechners herausfinden (z. B. `ip addr` / `ifconfig`, etwa `192.168.0.42`).
+2. Server starten (`python app.py`) – er lauscht bereits auf allen Adressen.
+3. Am Handy im Browser öffnen: `http://192.168.0.42:5000`
+
+Die MP3- und ZIP-Downloads landen dann direkt im Download-Ordner des Handys.
+Für den Zugriff von außerhalb des WLANs den Server bei einem Hoster deployen
+(z. B. per Docker, siehe oben).
+
 ### Konfiguration (optional, über Umgebungsvariablen)
 
 | Variable         | Standard | Bedeutung                              |
