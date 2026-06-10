@@ -52,6 +52,19 @@ docker run --rm -p 5000:5000 ytms-to-mp3
 
 Dann öffnen: <http://localhost:5000>
 
+### Vom Handy aus nutzen (Android/iOS)
+
+Das UI ist responsiv und funktioniert im mobilen Browser. Damit das Handy den
+Server erreicht, müssen Handy und Rechner im **selben WLAN** sein:
+
+1. IP-Adresse des Rechners herausfinden (z. B. `ip addr` / `ifconfig`, etwa `192.168.0.42`).
+2. Server starten (`python app.py`) – er lauscht bereits auf allen Adressen.
+3. Am Handy im Browser öffnen: `http://192.168.0.42:5000`
+
+Die MP3- und ZIP-Downloads landen dann direkt im Download-Ordner des Handys.
+Für den Zugriff von außerhalb des WLANs den Server bei einem Hoster deployen
+(z. B. per Docker, siehe oben).
+
 ### Konfiguration (optional, über Umgebungsvariablen)
 
 | Variable         | Standard | Bedeutung                              |

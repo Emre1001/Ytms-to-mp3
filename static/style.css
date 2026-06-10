@@ -146,3 +146,32 @@ button.primary:hover, .search button:hover { filter: brightness(1.08); }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 footer { margin-top: 40px; text-align: center; color: var(--muted); font-size: .8rem; }
+
+/* ---------- Mobile / Android ---------- */
+@media (max-width: 640px) {
+  .wrap { padding: 24px 14px 60px; }
+  h1 { font-size: 1.6rem; }
+
+  /* Stack the URL field, quality picker and button vertically. */
+  .search { flex-direction: column; gap: 8px; }
+  .search input,
+  .search select,
+  .search button { width: 100%; }
+  .search select { padding: 12px 14px; }
+
+  /* Toolbar: title on top, controls full-width below. */
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .actions { justify-content: space-between; }
+  .actions .primary { flex: 1; }
+
+  /* Track rows: keep cover + info on one line, download button below. */
+  .track { flex-wrap: wrap; gap: 10px; padding: 10px 12px; }
+  .info { flex: 1 1 auto; min-width: 0; }
+  .dl-btn { flex: 1 1 100%; order: 3; padding: 12px; }
+}
+
+/* Bigger, finger-friendly tap targets on touch devices. */
+@media (pointer: coarse) {
+  button { padding: 14px 20px; }
+  .track input[type="checkbox"] { width: 22px; height: 22px; }
+}
