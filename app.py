@@ -288,22 +288,26 @@ def api_download_zip():
     if len(ids) > MAX_ZIP_TRACKS:
         return jsonify({"error": f"Maximal {MAX_ZIP_TRACKS} Titel pro ZIP."}), 400
 
+    # Optional id -> title map from the frontend, for readable skip reports.
+    titles = data.get("titles") if isinstance(data.get("titles"), dict) else {}
+
     tmp_dir = tempfile.mkdtemp(prefix="ytmp3zip_")
     zip_buf = io.BytesIO()
     try:
-        last_error = None
+        skipped = []  # (title, reason) for every track that failed
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             used_names = set()
             for video_id in ids:
                 track_dir = tempfile.mkdtemp(prefix="t_", dir=tmp_dir)
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
+                label = str(titles.get(video_id) or video_id)
                 try:
                     mp3_path = download_track_to_dir(video_url, track_dir, bitrate)
                 except Exception as exc:  # noqa: BLE001 - skip failed tracks, keep going
-                    last_error = friendly_error(exc)
+                    skipped.append((label, friendly_error(exc)))
                     continue
                 if not mp3_path or not os.path.exists(mp3_path):
-                    last_error = last_error or "Konvertierung lieferte keine MP3-Datei."
+                    skipped.append((label, "Konvertierung lieferte keine MP3-Datei."))
                     continue
                 arc = safe_filename(os.path.splitext(os.path.basename(mp3_path))[0]) + ".mp3"
                 # Avoid name collisions inside the archive.
@@ -316,16 +320,25 @@ def api_download_zip():
                 zf.write(mp3_path, arcname=candidate)
 
             if not used_names:
-                detail = f" Grund: {last_error}" if last_error else ""
+                detail = f" Grund: {skipped[-1][1]}" if skipped else ""
                 return jsonify({"error": f"Kein Titel konnte heruntergeladen werden.{detail}"}), 502
 
+            if skipped:
+                report = "Diese Titel konnten nicht heruntergeladen werden:\n\n"
+                report += "\n".join(f"- {title}\n  Grund: {reason}" for title, reason in skipped)
+                zf.writestr("_Uebersprungene Titel.txt", report)
+
         zip_buf.seek(0)
-        return send_file(
+        response = send_file(
             zip_buf,
             mimetype="application/zip",
             as_attachment=True,
             download_name=f"{zip_name}.zip",
         )
+        # Counts for the UI status line ("X geladen, Y übersprungen").
+        response.headers["X-Tracks-Ok"] = str(len(used_names))
+        response.headers["X-Tracks-Skipped"] = str(len(skipped))
+        return response
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

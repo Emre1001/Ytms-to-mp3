@@ -80,6 +80,7 @@ function renderTracks(entries) {
     cb.type = "checkbox";
     cb.checked = true;
     cb.dataset.id = t.id;
+    cb.dataset.title = t.title;
 
     const img = document.createElement("img");
     img.className = "thumb";
@@ -165,9 +166,10 @@ selectAll.addEventListener("change", () => {
 });
 
 zipBtn.addEventListener("click", async () => {
-  const ids = [...trackList.querySelectorAll('input[type="checkbox"]:checked')].map(
-    (cb) => cb.dataset.id
-  );
+  const checked = [...trackList.querySelectorAll('input[type="checkbox"]:checked')];
+  const ids = checked.map((cb) => cb.dataset.id);
+  const titles = {};
+  checked.forEach((cb) => { titles[cb.dataset.id] = cb.dataset.title; });
   if (!ids.length) {
     setStatus("Bitte mindestens einen Titel auswählen.", true);
     return;
@@ -182,7 +184,7 @@ zipBtn.addEventListener("click", async () => {
     const res = await fetch("/api/download-zip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, name: currentTitle, bitrate: currentBitrate() }),
+      body: JSON.stringify({ ids, titles, name: currentTitle, bitrate: currentBitrate() }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -192,7 +194,16 @@ zipBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     triggerBrowserDownload(url);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setStatus("ZIP fertig ✓");
+    const ok = res.headers.get("X-Tracks-Ok");
+    const skipped = parseInt(res.headers.get("X-Tracks-Skipped") || "0", 10);
+    if (skipped > 0) {
+      setStatus(
+        `ZIP fertig ✓ — ${ok} Titel geladen, ${skipped} übersprungen ` +
+        `(Details in „_Uebersprungene Titel.txt" in der ZIP).`
+      );
+    } else {
+      setStatus(`ZIP fertig ✓ — ${ok} Titel geladen.`);
+    }
   } catch (err) {
     setStatus(err.message, true);
   } finally {
