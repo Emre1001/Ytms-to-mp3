@@ -44,6 +44,72 @@ def clean_bitrate(value) -> str:
     value = str(value or "").strip()
     return value if value in ALLOWED_BITRATES else AUDIO_BITRATE
 
+
+# Places we look for a Netscape-format cookies.txt. On Render, secret files
+# are mounted read-only under /etc/secrets/.
+_COOKIE_CANDIDATES = [
+    os.environ.get("COOKIES_FILE", ""),
+    "/etc/secrets/cookies.txt",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt"),
+]
+_cookie_copy = None
+_cookie_lock = threading.Lock()
+
+
+def cookie_file():
+    """Return a writable copy of the configured cookies.txt, or None.
+
+    yt-dlp rewrites the cookie file on exit, which fails on read-only mounts
+    like Render secret files — so we hand it a temp copy instead.
+    """
+    global _cookie_copy
+    with _cookie_lock:
+        if _cookie_copy and os.path.exists(_cookie_copy):
+            return _cookie_copy
+        for path in _COOKIE_CANDIDATES:
+            if path and os.path.isfile(path):
+                fd, tmp = tempfile.mkstemp(prefix="cookies_", suffix=".txt")
+                with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
+                    dst.write(src.read())
+                _cookie_copy = tmp
+                return tmp
+    return None
+
+
+def base_ydl_opts() -> dict:
+    """Common yt-dlp options: quiet + optional cookies / proxy / player client."""
+    opts = {"quiet": True, "no_warnings": True}
+    cookies = cookie_file()
+    if cookies:
+        opts["cookiefile"] = cookies
+    proxy = os.environ.get("PROXY_URL")
+    if proxy:
+        opts["proxy"] = proxy
+    player_client = os.environ.get("YT_PLAYER_CLIENT")
+    if player_client:
+        clients = [c.strip() for c in player_client.split(",") if c.strip()]
+        if clients:
+            opts["extractor_args"] = {"youtube": {"player_client": clients}}
+    return opts
+
+
+def friendly_error(exc) -> str:
+    """Translate common yt-dlp failures into actionable German messages."""
+    msg = str(exc)
+    if "Sign in to confirm" in msg or "not a bot" in msg:
+        return (
+            "YouTube blockiert die Server-IP (Bot-Schutz). "
+            "Hinterlege eine cookies.txt als Secret File (siehe README, "
+            "Abschnitt 'YouTube-Cookies')."
+        )
+    if "Video unavailable" in msg:
+        return "Video nicht verfügbar (gelöscht, privat oder regional gesperrt)."
+    if "age" in msg.lower() and "restrict" in msg.lower():
+        return "Altersbeschränktes Video – dafür werden YouTube-Cookies benötigt."
+    # Strip the noisy "ERROR: [youtube] xyz:" prefix yt-dlp adds.
+    msg = re.sub(r"^ERROR:\s*(\[[^\]]+\]\s*[\w-]*:?\s*)?", "", msg)
+    return msg[:300]
+
 _INVALID_FS_CHARS = re.compile(r'[\\/:*?"<>|]')
 
 
@@ -65,8 +131,7 @@ def extract_playlist(url: str) -> dict:
     cheap, just enough to render the track list.
     """
     ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
+        **base_ydl_opts(),
         "extract_flat": "in_playlist",
         "skip_download": True,
     }
@@ -116,8 +181,7 @@ def download_track_to_dir(video_url: str, out_dir: str, bitrate: str = AUDIO_BIT
     """Download a single track as MP3 into out_dir, return the file path."""
     outtmpl = os.path.join(out_dir, "%(title)s.%(ext)s")
     ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
+        **base_ydl_opts(),
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
         "postprocessors": [
@@ -166,7 +230,7 @@ def api_playlist():
     try:
         result = extract_playlist(url)
     except Exception as exc:  # noqa: BLE001 - surface yt-dlp errors to the UI
-        return jsonify({"error": f"Konnte die Playlist nicht laden: {exc}"}), 502
+        return jsonify({"error": f"Konnte die Playlist nicht laden: {friendly_error(exc)}"}), 502
     if not result["entries"]:
         return jsonify({"error": "Keine Titel in dieser Playlist gefunden."}), 404
     return jsonify(result)
@@ -200,7 +264,7 @@ def api_download():
             download_name=download_name,
         )
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": f"Download fehlgeschlagen: {exc}"}), 502
+        return jsonify({"error": f"Download fehlgeschlagen: {friendly_error(exc)}"}), 502
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -224,19 +288,26 @@ def api_download_zip():
     if len(ids) > MAX_ZIP_TRACKS:
         return jsonify({"error": f"Maximal {MAX_ZIP_TRACKS} Titel pro ZIP."}), 400
 
+    # Optional id -> title map from the frontend, for readable skip reports.
+    titles = data.get("titles") if isinstance(data.get("titles"), dict) else {}
+
     tmp_dir = tempfile.mkdtemp(prefix="ytmp3zip_")
     zip_buf = io.BytesIO()
     try:
+        skipped = []  # (title, reason) for every track that failed
         with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
             used_names = set()
             for video_id in ids:
                 track_dir = tempfile.mkdtemp(prefix="t_", dir=tmp_dir)
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
+                label = str(titles.get(video_id) or video_id)
                 try:
                     mp3_path = download_track_to_dir(video_url, track_dir, bitrate)
-                except Exception:  # noqa: BLE001 - skip failed tracks, keep going
+                except Exception as exc:  # noqa: BLE001 - skip failed tracks, keep going
+                    skipped.append((label, friendly_error(exc)))
                     continue
                 if not mp3_path or not os.path.exists(mp3_path):
+                    skipped.append((label, "Konvertierung lieferte keine MP3-Datei."))
                     continue
                 arc = safe_filename(os.path.splitext(os.path.basename(mp3_path))[0]) + ".mp3"
                 # Avoid name collisions inside the archive.
@@ -249,15 +320,25 @@ def api_download_zip():
                 zf.write(mp3_path, arcname=candidate)
 
             if not used_names:
-                return jsonify({"error": "Kein Titel konnte heruntergeladen werden."}), 502
+                detail = f" Grund: {skipped[-1][1]}" if skipped else ""
+                return jsonify({"error": f"Kein Titel konnte heruntergeladen werden.{detail}"}), 502
+
+            if skipped:
+                report = "Diese Titel konnten nicht heruntergeladen werden:\n\n"
+                report += "\n".join(f"- {title}\n  Grund: {reason}" for title, reason in skipped)
+                zf.writestr("_Uebersprungene Titel.txt", report)
 
         zip_buf.seek(0)
-        return send_file(
+        response = send_file(
             zip_buf,
             mimetype="application/zip",
             as_attachment=True,
             download_name=f"{zip_name}.zip",
         )
+        # Counts for the UI status line ("X geladen, Y übersprungen").
+        response.headers["X-Tracks-Ok"] = str(len(used_names))
+        response.headers["X-Tracks-Skipped"] = str(len(skipped))
+        return response
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

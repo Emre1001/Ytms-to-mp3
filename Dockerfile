@@ -15,4 +15,5 @@ COPY . .
 ENV PORT=5000
 EXPOSE 5000
 
-CMD ["python", "app.py"]
+# Long --timeout: ZIP downloads convert many tracks in one request.
+CMD gunicorn --workers 2 --threads 4 --timeout 900 --bind 0.0.0.0:${PORT:-5000} app:app

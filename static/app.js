@@ -80,6 +80,7 @@ function renderTracks(entries) {
     cb.type = "checkbox";
     cb.checked = true;
     cb.dataset.id = t.id;
+    cb.dataset.title = t.title;
 
     const img = document.createElement("img");
     img.className = "thumb";
@@ -111,24 +112,51 @@ function renderTracks(entries) {
   }
 }
 
-function downloadOne(id, btn) {
-  const original = btn.textContent;
+function filenameFromDisposition(res, fallback) {
+  const cd = res.headers.get("Content-Disposition") || "";
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) {
+    try { return decodeURIComponent(star[1]); } catch (_) { /* fall through */ }
+  }
+  const plain = cd.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : fallback;
+}
+
+async function downloadOne(id, btn) {
+  const original = "MP3";
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
-  // The browser handles the actual file download; we can't easily detect
-  // completion of a navigation download, so we re-enable after a short delay.
-  triggerBrowserDownload(
-    `/api/download?id=${encodeURIComponent(id)}&bitrate=${encodeURIComponent(currentBitrate())}`
-  );
-  setTimeout(() => {
-    btn.disabled = false;
+  try {
+    const res = await fetch(
+      `/api/download?id=${encodeURIComponent(id)}&bitrate=${encodeURIComponent(currentBitrate())}`
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Download fehlgeschlagen.");
+    }
+    const blob = await res.blob();
+    const name = filenameFromDisposition(res, "track.mp3");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    setStatus("");
     btn.textContent = "✓ MP3";
     btn.classList.add("done");
     setTimeout(() => {
       btn.textContent = original;
       btn.classList.remove("done");
     }, 2500);
-  }, 1500);
+  } catch (err) {
+    setStatus(err.message, true);
+    btn.textContent = original;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 selectAll.addEventListener("change", () => {
@@ -138,9 +166,10 @@ selectAll.addEventListener("change", () => {
 });
 
 zipBtn.addEventListener("click", async () => {
-  const ids = [...trackList.querySelectorAll('input[type="checkbox"]:checked')].map(
-    (cb) => cb.dataset.id
-  );
+  const checked = [...trackList.querySelectorAll('input[type="checkbox"]:checked')];
+  const ids = checked.map((cb) => cb.dataset.id);
+  const titles = {};
+  checked.forEach((cb) => { titles[cb.dataset.id] = cb.dataset.title; });
   if (!ids.length) {
     setStatus("Bitte mindestens einen Titel auswählen.", true);
     return;
@@ -155,7 +184,7 @@ zipBtn.addEventListener("click", async () => {
     const res = await fetch("/api/download-zip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, name: currentTitle, bitrate: currentBitrate() }),
+      body: JSON.stringify({ ids, titles, name: currentTitle, bitrate: currentBitrate() }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -165,7 +194,16 @@ zipBtn.addEventListener("click", async () => {
     const url = URL.createObjectURL(blob);
     triggerBrowserDownload(url);
     setTimeout(() => URL.revokeObjectURL(url), 10000);
-    setStatus("ZIP fertig ✓");
+    const ok = res.headers.get("X-Tracks-Ok");
+    const skipped = parseInt(res.headers.get("X-Tracks-Skipped") || "0", 10);
+    if (skipped > 0) {
+      setStatus(
+        `ZIP fertig ✓ — ${ok} Titel geladen, ${skipped} übersprungen ` +
+        `(Details in „_Uebersprungene Titel.txt" in der ZIP).`
+      );
+    } else {
+      setStatus(`ZIP fertig ✓ — ${ok} Titel geladen.`);
+    }
   } catch (err) {
     setStatus(err.message, true);
   } finally {
