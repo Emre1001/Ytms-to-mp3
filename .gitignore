@@ -5,5 +5,6 @@ venv/
 env/
 *.mp3
 *.zip
+cookies.txt
 .DS_Store
 downloads/

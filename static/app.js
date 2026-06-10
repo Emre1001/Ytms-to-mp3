@@ -111,24 +111,51 @@ function renderTracks(entries) {
   }
 }
 
-function downloadOne(id, btn) {
-  const original = btn.textContent;
+function filenameFromDisposition(res, fallback) {
+  const cd = res.headers.get("Content-Disposition") || "";
+  const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  if (star) {
+    try { return decodeURIComponent(star[1]); } catch (_) { /* fall through */ }
+  }
+  const plain = cd.match(/filename="?([^";]+)"?/i);
+  return plain ? plain[1] : fallback;
+}
+
+async function downloadOne(id, btn) {
+  const original = "MP3";
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
-  // The browser handles the actual file download; we can't easily detect
-  // completion of a navigation download, so we re-enable after a short delay.
-  triggerBrowserDownload(
-    `/api/download?id=${encodeURIComponent(id)}&bitrate=${encodeURIComponent(currentBitrate())}`
-  );
-  setTimeout(() => {
-    btn.disabled = false;
+  try {
+    const res = await fetch(
+      `/api/download?id=${encodeURIComponent(id)}&bitrate=${encodeURIComponent(currentBitrate())}`
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Download fehlgeschlagen.");
+    }
+    const blob = await res.blob();
+    const name = filenameFromDisposition(res, "track.mp3");
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    setStatus("");
     btn.textContent = "✓ MP3";
     btn.classList.add("done");
     setTimeout(() => {
       btn.textContent = original;
       btn.classList.remove("done");
     }, 2500);
-  }, 1500);
+  } catch (err) {
+    setStatus(err.message, true);
+    btn.textContent = original;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 selectAll.addEventListener("change", () => {

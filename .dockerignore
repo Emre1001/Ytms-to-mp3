@@ -5,5 +5,6 @@ __pycache__/
 venv/
 *.mp3
 *.zip
+cookies.txt
 downloads/
 .DS_Store

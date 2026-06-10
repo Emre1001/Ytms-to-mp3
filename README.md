@@ -76,6 +76,31 @@ komplett im Handy-Browser:
 > YouTube-Cookies hinterlegt (siehe yt-dlp `--cookies`). Zuverlässig
 > funktioniert das Tool am ehesten in einem privaten Netz.
 
+### YouTube-Cookies hinterlegen (gegen „Kein Titel konnte heruntergeladen werden")
+
+Wenn Downloads in der Cloud mit Bot-Schutz-Fehlern scheitern, hilft eine
+**cookies.txt** mit einem eingeloggten YouTube-Konto:
+
+1. **cookies.txt exportieren** (Netscape-Format):
+   - Am Handy: **Firefox für Android** installieren, bei YouTube einloggen und
+     ein Add-on wie „cookies.txt" / „Export Cookies" verwenden.
+   - Am PC: Browser-Erweiterung „Get cookies.txt LOCALLY" auf youtube.com.
+2. **In Render hinterlegen:** Dienst öffnen → **Environment → Secret Files** →
+   neue Datei mit Namen `cookies.txt` anlegen und den Export-Inhalt einfügen.
+   Sie wird unter `/etc/secrets/cookies.txt` gemountet – die App findet sie
+   dort automatisch (kein weiterer Schritt nötig). Danach **Deploy** auslösen
+   bzw. den Dienst neu starten.
+3. Alternativ kann der Pfad per Umgebungsvariable `COOKIES_FILE` gesetzt
+   werden, oder eine `cookies.txt` neben `app.py` gelegt werden.
+
+> 🔐 **Empfehlung:** Dafür ein Zweit-/Wegwerf-Google-Konto verwenden – es
+> besteht ein Restrisiko, dass YouTube das Konto sperrt.
+
+Weitere Stellschrauben bei Blockaden:
+
+- `PROXY_URL` – Downloads über einen (z. B. Residential-)Proxy leiten.
+- `YT_PLAYER_CLIENT` – yt-dlp-Player-Clients erzwingen, z. B. `android,web`.
+
 ### Vom Handy aus nutzen, wenn du doch einen Rechner im selben WLAN hast (Android/iOS)
 
 Das UI ist responsiv und funktioniert im mobilen Browser. Damit das Handy den
@@ -96,6 +121,9 @@ Für den Zugriff von außerhalb des WLANs den Server bei einem Hoster deployen
 | `PORT`           | `5000`   | Port des Webservers                    |
 | `AUDIO_BITRATE`  | `192`    | Standard-MP3-Bitrate in kbps (UI-Auswahl überschreibt) |
 | `MAX_ZIP_TRACKS` | `100`    | Max. Anzahl Titel pro ZIP-Download     |
+| `COOKIES_FILE`   | –        | Pfad zu einer cookies.txt (Netscape-Format) |
+| `PROXY_URL`      | –        | Proxy für alle YouTube-Anfragen        |
+| `YT_PLAYER_CLIENT` | –      | yt-dlp-Player-Clients, z. B. `android,web` |
 | `DEBUG`          | –        | Auf einen Wert setzen für Flask-Debug  |
 
 ## Funktionsweise
