@@ -29,11 +29,20 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# Audio quality in kbps for the MP3 conversion.
+# Default audio quality in kbps for the MP3 conversion.
 AUDIO_BITRATE = os.environ.get("AUDIO_BITRATE", "192")
+
+# Bitrates the user is allowed to request from the UI.
+ALLOWED_BITRATES = {"128", "192", "256", "320"}
 
 # Limit how many tracks we will accept in one ZIP request to avoid abuse.
 MAX_ZIP_TRACKS = int(os.environ.get("MAX_ZIP_TRACKS", "100"))
+
+
+def clean_bitrate(value) -> str:
+    """Return a validated bitrate string, falling back to the default."""
+    value = str(value or "").strip()
+    return value if value in ALLOWED_BITRATES else AUDIO_BITRATE
 
 _INVALID_FS_CHARS = re.compile(r'[\\/:*?"<>|]')
 
@@ -103,7 +112,7 @@ def extract_playlist(url: str) -> dict:
     }
 
 
-def download_track_to_dir(video_url: str, out_dir: str) -> str:
+def download_track_to_dir(video_url: str, out_dir: str, bitrate: str = AUDIO_BITRATE) -> str:
     """Download a single track as MP3 into out_dir, return the file path."""
     outtmpl = os.path.join(out_dir, "%(title)s.%(ext)s")
     ydl_opts = {
@@ -115,7 +124,7 @@ def download_track_to_dir(video_url: str, out_dir: str) -> str:
             {
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": AUDIO_BITRATE,
+                "preferredquality": bitrate,
             }
         ],
         # Embed metadata + thumbnail so the MP3 looks nice in players.
@@ -139,7 +148,13 @@ def download_track_to_dir(video_url: str, out_dir: str) -> str:
 
 @app.route("/")
 def index():
-    return render_template("index.html", ffmpeg=ffmpeg_available())
+    bitrates = sorted(ALLOWED_BITRATES, key=int)
+    return render_template(
+        "index.html",
+        ffmpeg=ffmpeg_available(),
+        bitrates=bitrates,
+        default_bitrate=AUDIO_BITRATE,
+    )
 
 
 @app.route("/api/playlist", methods=["POST"])
@@ -166,10 +181,11 @@ def api_download():
     if not ffmpeg_available():
         return jsonify({"error": "ffmpeg ist nicht installiert (für MP3 nötig)."}), 500
 
+    bitrate = clean_bitrate(request.args.get("bitrate"))
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     tmp_dir = tempfile.mkdtemp(prefix="ytmp3_")
     try:
-        mp3_path = download_track_to_dir(video_url, tmp_dir)
+        mp3_path = download_track_to_dir(video_url, tmp_dir, bitrate)
         if not os.path.exists(mp3_path):
             return jsonify({"error": "Download fehlgeschlagen."}), 502
         download_name = safe_filename(os.path.splitext(os.path.basename(mp3_path))[0]) + ".mp3"
@@ -198,6 +214,7 @@ def api_download_zip():
     data = request.get_json(silent=True) or {}
     ids = data.get("ids") or []
     zip_name = safe_filename(data.get("name") or "playlist")
+    bitrate = clean_bitrate(data.get("bitrate"))
 
     if not isinstance(ids, list) or not ids:
         return jsonify({"error": "Keine Titel ausgewählt."}), 400
@@ -216,7 +233,7 @@ def api_download_zip():
                 track_dir = tempfile.mkdtemp(prefix="t_", dir=tmp_dir)
                 video_url = f"https://www.youtube.com/watch?v={video_id}"
                 try:
-                    mp3_path = download_track_to_dir(video_url, track_dir)
+                    mp3_path = download_track_to_dir(video_url, track_dir, bitrate)
                 except Exception:  # noqa: BLE001 - skip failed tracks, keep going
                     continue
                 if not mp3_path or not os.path.exists(mp3_path):

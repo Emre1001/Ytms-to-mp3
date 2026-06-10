@@ -1,0 +1,9 @@
+.git
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.mp3
+*.zip
+downloads/
+.DS_Store

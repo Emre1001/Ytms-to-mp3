@@ -8,8 +8,13 @@ const plCount = document.getElementById("plCount");
 const trackList = document.getElementById("trackList");
 const selectAll = document.getElementById("selectAll");
 const zipBtn = document.getElementById("zipBtn");
+const bitrateSel = document.getElementById("bitrate");
 
 let currentTitle = "playlist";
+
+function currentBitrate() {
+  return bitrateSel ? bitrateSel.value : "192";
+}
 
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg || "";
@@ -112,7 +117,9 @@ function downloadOne(id, btn) {
   btn.innerHTML = '<span class="spinner"></span>';
   // The browser handles the actual file download; we can't easily detect
   // completion of a navigation download, so we re-enable after a short delay.
-  triggerBrowserDownload(`/api/download?id=${encodeURIComponent(id)}`);
+  triggerBrowserDownload(
+    `/api/download?id=${encodeURIComponent(id)}&bitrate=${encodeURIComponent(currentBitrate())}`
+  );
   setTimeout(() => {
     btn.disabled = false;
     btn.textContent = "✓ MP3";
@@ -148,7 +155,7 @@ zipBtn.addEventListener("click", async () => {
     const res = await fetch("/api/download-zip", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, name: currentTitle }),
+      body: JSON.stringify({ ids, name: currentTitle, bitrate: currentBitrate() }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));

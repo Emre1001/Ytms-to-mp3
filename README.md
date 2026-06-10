@@ -12,7 +12,8 @@ Eine kleine Web-App, mit der man die Titel einer **YouTube-Music-Playlist**
 
 - Playlist-Link einfügen → alle Titel werden mit Cover, Titel, Interpret und
   Dauer aufgelistet.
-- **Einzeldownload** jedes Titels als MP3 (192 kbps, konfigurierbar).
+- **Einzeldownload** jedes Titels als MP3.
+- **Qualitätsauswahl** im UI (128 / 192 / 256 / 320 kbps).
 - **Mehrfachauswahl** per Checkbox und Download als **eine ZIP-Datei**.
 - Schlankes, dunkles UI ohne Build-Schritt (reines HTML/CSS/JS).
 
@@ -40,12 +41,23 @@ python app.py
 
 Dann im Browser öffnen: <http://localhost:5000>
 
+### Mit Docker (inkl. ffmpeg)
+
+Das Docker-Image bringt `ffmpeg` bereits mit:
+
+```bash
+docker build -t ytms-to-mp3 .
+docker run --rm -p 5000:5000 ytms-to-mp3
+```
+
+Dann öffnen: <http://localhost:5000>
+
 ### Konfiguration (optional, über Umgebungsvariablen)
 
 | Variable         | Standard | Bedeutung                              |
 | ---------------- | -------- | -------------------------------------- |
 | `PORT`           | `5000`   | Port des Webservers                    |
-| `AUDIO_BITRATE`  | `192`    | MP3-Bitrate in kbps                    |
+| `AUDIO_BITRATE`  | `192`    | Standard-MP3-Bitrate in kbps (UI-Auswahl überschreibt) |
 | `MAX_ZIP_TRACKS` | `100`    | Max. Anzahl Titel pro ZIP-Download     |
 | `DEBUG`          | –        | Auf einen Wert setzen für Flask-Debug  |
 

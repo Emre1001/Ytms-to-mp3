@@ -21,6 +21,11 @@
 
     <form id="loadForm" class="search">
       <input id="urlInput" type="text" placeholder="https://music.youtube.com/playlist?list=..." autocomplete="off" />
+      <select id="bitrate" title="MP3-Qualität">
+        {% for b in bitrates %}
+        <option value="{{ b }}" {% if b == default_bitrate %}selected{% endif %}>{{ b }} kbps</option>
+        {% endfor %}
+      </select>
       <button id="loadBtn" type="submit">Laden</button>
     </form>
 
