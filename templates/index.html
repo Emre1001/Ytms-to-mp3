@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT Music → MP3 Downloader</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>🎵 YT Music → MP3</h1>
+      <p class="sub">Playlist-Link einfügen, Titel auswählen und einzeln als MP3 oder gesammelt als ZIP herunterladen.</p>
+    </header>
+
+    {% if not ffmpeg %}
+    <div class="banner warn">
+      ⚠️ <strong>ffmpeg</strong> wurde nicht gefunden. Die MP3-Konvertierung funktioniert erst, wenn ffmpeg installiert ist.
+    </div>
+    {% endif %}
+
+    <form id="loadForm" class="search">
+      <input id="urlInput" type="text" placeholder="https://music.youtube.com/playlist?list=..." autocomplete="off" />
+      <select id="bitrate" title="MP3-Qualität">
+        {% for b in bitrates %}
+        <option value="{{ b }}" {% if b == default_bitrate %}selected{% endif %}>{{ b }} kbps</option>
+        {% endfor %}
+      </select>
+      <button id="loadBtn" type="submit">Laden</button>
+    </form>
+
+    <div id="status" class="status"></div>
+
+    <section id="results" class="results hidden">
+      <div class="toolbar">
+        <div class="meta">
+          <h2 id="plTitle"></h2>
+          <span id="plCount" class="count"></span>
+        </div>
+        <div class="actions">
+          <label class="checkall"><input type="checkbox" id="selectAll" checked /> Alle</label>
+          <button id="zipBtn" type="button" class="primary">Auswahl als ZIP</button>
+        </div>
+      </div>
+      <ul id="trackList" class="tracks"></ul>
+    </section>
+
+    <footer>
+      <p>Nur für Inhalte verwenden, an denen du die Rechte besitzt.</p>
+    </footer>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
