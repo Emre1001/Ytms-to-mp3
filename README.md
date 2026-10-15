@@ -10,12 +10,21 @@ Eine kleine Web-App, mit der man die Titel einer **YouTube-Music-Playlist**
 
 ## Features
 
-- Playlist-Link einfügen → alle Titel werden mit Cover, Titel, Interpret und
-  Dauer aufgelistet.
-- **Einzeldownload** jedes Titels als MP3.
-- **Qualitätsauswahl** im UI (128 / 192 / 256 / 320 kbps).
-- **Mehrfachauswahl** per Checkbox und Download als **eine ZIP-Datei**.
-- Schlankes, dunkles UI ohne Build-Schritt (reines HTML/CSS/JS).
+- Playlist-Link einfügen, ins Fenster ziehen oder einfach irgendwo mit
+  <kbd>Strg</kbd>+<kbd>V</kbd> einfügen → alle Titel werden mit Cover, Titel,
+  Interpret und Dauer aufgelistet.
+- **Einzeldownload** jedes Titels als MP3 – mit echtem Fortschritt (Prozent,
+  Tempo, Restzeit, Umwandlungs-Phase) und Abbrechen per Tipp auf den Ring.
+- **Mehrfachauswahl** (Tippen, <kbd>Shift</kbd>-Klick für Bereiche,
+  <kbd>Strg</kbd>+<kbd>A</kbd>) und Download als **eine ZIP-Datei**; das Dock
+  unten zeigt, welcher Titel gerade gepackt wird.
+- **Qualitätsauswahl** (128 / 192 / 256 / 320 kbps), Suche, Filter
+  (Alle / Ausgewählt / Geladen / Fehler) und „Zuletzt geöffnet“.
+- Oberfläche im Stil von [Speedload](https://github.com/Emre1001/speedload):
+  vier Designs (**Standard, Glas, ASCII, Split-Flap**), Hell/Dunkel/System,
+  Akzentfarbe, Animationen in drei Stufen (Voll / Wenig / Aus, folgt sonst der
+  Systemeinstellung). Einstellungen bleiben im Browser gespeichert.
+- Kein Build-Schritt (reines HTML/CSS/JS), funktioniert auch am Handy.
 
 ## Voraussetzungen
 
@@ -121,6 +130,8 @@ Für den Zugriff von außerhalb des WLANs den Server bei einem Hoster deployen
 | `PORT`           | `5000`   | Port des Webservers                    |
 | `AUDIO_BITRATE`  | `192`    | Standard-MP3-Bitrate in kbps (UI-Auswahl überschreibt) |
 | `MAX_ZIP_TRACKS` | `100`    | Max. Anzahl Titel pro ZIP-Download     |
+| `MAX_PARALLEL`   | `3`      | Gleichzeitige Downloads pro Server-Prozess |
+| `JOB_TTL`        | `1800`   | Sekunden, die fertige Dateien zum erneuten Sichern liegen bleiben |
 | `COOKIES_FILE`   | –        | Pfad zu einer cookies.txt (Netscape-Format) |
 | `PROXY_URL`      | –        | Proxy für alle YouTube-Anfragen        |
 | `YT_PLAYER_CLIENT` | –      | yt-dlp-Player-Clients, z. B. `android,web` |
@@ -132,8 +143,13 @@ Für den Zugriff von außerhalb des WLANs den Server bei einem Hoster deployen
    Playlist-Metadaten (ohne vollständigen Download) auszulesen.
 2. Beim Download wird die beste Audiospur geholt und per `ffmpeg` zu MP3
    konvertiert.
-3. Für ZIPs werden alle ausgewählten Titel heruntergeladen und im Speicher zu
-   einem Archiv gebündelt.
+3. Jeder Download läuft als Auftrag im Hintergrund (`POST /api/jobs`). Der
+   Fortschritt aus yt-dlp landet in einer kleinen Statusdatei im Temp-Ordner,
+   die das UI abfragt (`GET /api/jobs/<id>`) – so klappt das auch mit mehreren
+   gunicorn-Workern. Die fertige MP3/ZIP holt der Browser über
+   `GET /api/jobs/<id>/file`; `DELETE /api/jobs/<id>` bricht ab.
+4. Für ZIPs werden die Titel nacheinander geladen und in ein Archiv gepackt;
+   nicht ladbare Titel werden übersprungen und in der ZIP aufgelistet.
 
 ## Projektstruktur
 
