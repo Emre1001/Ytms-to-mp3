@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
-# ffmpeg is required by yt-dlp for the MP3 conversion.
+# ffmpeg converts to MP3; QuickJS lets yt-dlp solve YouTube's JavaScript challenges.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates \
+    && curl -fsSL -o /usr/local/bin/qjs https://github.com/quickjs-ng/quickjs/releases/download/v0.17.0/qjs-linux-x86_64 \
+    && chmod +x /usr/local/bin/qjs \
+    && apt-get purge -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

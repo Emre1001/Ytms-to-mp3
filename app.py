@@ -5,7 +5,8 @@ A small Flask web app that takes a YouTube / YouTube Music playlist (or a
 single video) URL, lists the tracks, and lets you download each one as an MP3
 or grab the whole selection as a single ZIP.
 
-Requirements (system): ffmpeg must be installed and on PATH for MP3 conversion.
+Requirements (system): ffmpeg must be installed and on PATH for MP3 conversion
+(or FFMPEG_LOCATION must point at it, as the desktop app does).
 Python deps: see requirements.txt (Flask, yt-dlp).
 """
 
@@ -29,8 +30,22 @@ from flask import (
 )
 
 import yt_dlp
+from yt_dlp.postprocessor.metadataparser import MetadataParserPP
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
+
+
+def _read_version() -> str:
+    try:
+        with open(os.path.join(BASE_DIR, "VERSION"), encoding="utf-8") as fh:
+            return fh.read().strip() or "dev"
+    except OSError:
+        return "dev"
+
+
+APP_VERSION = _read_version()
 
 # Default audio quality in kbps for the MP3 conversion.
 AUDIO_BITRATE = os.environ.get("AUDIO_BITRATE", "192")
@@ -41,8 +56,18 @@ ALLOWED_BITRATES = {"128", "192", "256", "320"}
 # Limit how many tracks we will accept in one ZIP request to avoid abuse.
 MAX_ZIP_TRACKS = int(os.environ.get("MAX_ZIP_TRACKS", "100"))
 
+# ffmpeg binary or the folder that holds it; default is whatever is on PATH.
+FFMPEG_LOCATION = os.environ.get("FFMPEG_LOCATION") or None
+
+# Write title/artist/album tags and the (square-cropped) cover into each MP3.
+EMBED_META = os.environ.get("EMBED_META", "1") != "0"
+
+# The desktop app sets a random token and sends it with every request, so
+# other local programs or websites can't drive the local server.
+ACCESS_TOKEN = os.environ.get("YTMP3_TOKEN") or None
+
 # Cache-buster for static/style.css and static/app.js.
-_STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+_STATIC = os.path.join(BASE_DIR, "static")
 ASSET_VERSION = str(int(max(
     (os.path.getmtime(os.path.join(_STATIC, f)) for f in os.listdir(_STATIC)),
     default=0,
@@ -60,7 +85,7 @@ def clean_bitrate(value) -> str:
 _COOKIE_CANDIDATES = [
     os.environ.get("COOKIES_FILE", ""),
     "/etc/secrets/cookies.txt",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt"),
+    os.path.join(BASE_DIR, "cookies.txt"),
 ]
 _cookie_copy = None
 _cookie_lock = threading.Lock()
@@ -86,9 +111,30 @@ def cookie_file():
     return None
 
 
+def js_runtimes() -> dict:
+    """JavaScript runtimes yt-dlp may use for YouTube's player challenges.
+
+    The desktop app points YTMP3_NODE at Electron's built-in Node and ships
+    QuickJS (YTMP3_QJS) as a fallback; otherwise whatever is installed is used.
+    Runtimes that aren't found are simply skipped by yt-dlp.
+    """
+    node = os.environ.get("YTMP3_NODE")
+    qjs = os.environ.get("YTMP3_QJS") or shutil.which("qjs")
+    return {
+        "deno": {},
+        "node": {"path": node} if node else {},
+        "bun": {},
+        "quickjs": {"path": qjs} if qjs else {},
+    }
+
+
 def base_ydl_opts() -> dict:
     """Common yt-dlp options: quiet + optional cookies / proxy / player client."""
-    opts = {"quiet": True, "no_warnings": True, "noprogress": True}
+    opts = {"quiet": True, "no_warnings": True, "noprogress": True, "js_runtimes": js_runtimes()}
+    if FFMPEG_LOCATION:
+        opts["ffmpeg_location"] = FFMPEG_LOCATION
+    if os.environ.get("YTMP3_CACHE"):
+        opts["cachedir"] = os.environ["YTMP3_CACHE"]
     cookies = cookie_file()
     if cookies:
         opts["cookiefile"] = cookies
@@ -130,8 +176,17 @@ def safe_filename(name: str) -> str:
     return name[:180] or "track"
 
 
+def ffmpeg_path():
+    """Path of the ffmpeg binary that yt-dlp will use, or None."""
+    if FFMPEG_LOCATION:
+        exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+        path = os.path.join(FFMPEG_LOCATION, exe) if os.path.isdir(FFMPEG_LOCATION) else FFMPEG_LOCATION
+        return path if os.path.isfile(path) else None
+    return shutil.which("ffmpeg")
+
+
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return ffmpeg_path() is not None
 
 
 def extract_playlist(url: str) -> dict:
@@ -195,6 +250,11 @@ def extract_playlist(url: str) -> dict:
     }
 
 
+# Square-crop the thumbnail: YouTube Music covers sit letterboxed in a 16:9 frame.
+_COVER_ARGS = ["-c:v", "mjpeg", "-qmin", "1", "-qscale:v", "3",
+               "-vf", "crop='if(gt(ih,iw),iw,ih)':'if(gt(iw,ih),ih,iw)'"]
+
+
 def download_track_to_dir(
     video_url: str,
     out_dir: str,
@@ -203,30 +263,46 @@ def download_track_to_dir(
     postprocessor_hooks=None,
 ) -> str:
     """Download a single track as MP3 into out_dir, return the file path."""
-    outtmpl = os.path.join(out_dir, "%(title)s.%(ext)s")
+    # "Artist - Title.mp3" when yt-dlp knows the artist (YouTube Music), else the video title.
+    outtmpl = os.path.join(out_dir, "%(artist&{} - |)s%(track,title)s.%(ext)s")
+    postprocessors = [
+        {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": bitrate},
+    ]
+    if EMBED_META:
+        postprocessors = [
+            # Long video descriptions don't belong in ID3 tags.
+            {"key": "MetadataParser", "when": "pre_process", "actions": [
+                (MetadataParserPP.Actions.INTERPRET, "", "(?P<meta_description>)"),
+                (MetadataParserPP.Actions.INTERPRET, "", "(?P<meta_synopsis>)"),
+            ]},
+            {"key": "FFmpegThumbnailsConvertor", "format": "jpg", "when": "before_dl"},
+            *postprocessors,
+            {"key": "FFmpegMetadata", "add_metadata": True},
+            {"key": "EmbedThumbnail", "already_have_thumbnail": False},
+        ]
     ydl_opts = {
         **base_ydl_opts(),
         "progress_hooks": progress_hooks or [],
         "postprocessor_hooks": postprocessor_hooks or [],
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": bitrate,
-            }
-        ],
-        # Embed metadata + thumbnail so the MP3 looks nice in players.
-        "writethumbnail": False,
-        "postprocessor_args": [],
+        "postprocessors": postprocessors,
+        "writethumbnail": EMBED_META,
+        "postprocessor_args": {"thumbnailsconvertor+ffmpeg_o": _COVER_ARGS},
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(video_url, download=True)
+        try:
+            info = ydl.extract_info(video_url, download=True)
+        except yt_dlp.utils.PostProcessingError:
+            # Tags or cover failed, but the MP3 itself is usually there — keep it.
+            info = None
+            if not any(f.lower().endswith(".mp3") for f in os.listdir(out_dir)):
+                raise
 
-    # After post-processing the file ends in .mp3.
-    base = ydl.prepare_filename(info)
-    mp3_path = os.path.splitext(base)[0] + ".mp3"
+    mp3_path = ""
+    if info:
+        # After post-processing the file ends in .mp3.
+        mp3_path = os.path.splitext(ydl.prepare_filename(info))[0] + ".mp3"
     if not os.path.exists(mp3_path):
         # Fallback: find any mp3 in the dir.
         for f in os.listdir(out_dir):
@@ -234,6 +310,12 @@ def download_track_to_dir(
                 mp3_path = os.path.join(out_dir, f)
                 break
     return mp3_path
+
+
+@app.before_request
+def require_token():
+    if ACCESS_TOKEN and request.headers.get("X-YTMP3-Token") != ACCESS_TOKEN:
+        return jsonify({"error": "Kein Zugriff."}), 403
 
 
 @app.route("/")
@@ -246,7 +328,23 @@ def index():
         default_bitrate=AUDIO_BITRATE,
         max_zip=MAX_ZIP_TRACKS,
         version=ASSET_VERSION,
+        app_version=APP_VERSION,
     )
+
+
+@app.route("/api/info", methods=["GET"])
+def api_info():
+    """Versions for the settings panel (and a quick health check)."""
+    return jsonify({
+        "version": APP_VERSION,
+        "ytdlp": yt_dlp.version.__version__,
+        "ffmpeg": ffmpeg_available(),
+        "update": UPDATE_STATE,
+    })
+
+
+# The desktop launcher fills this in when it fetched a newer yt-dlp.
+UPDATE_STATE = {}
 
 
 @app.route("/api/playlist", methods=["POST"])

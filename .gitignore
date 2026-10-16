@@ -8,3 +8,13 @@ env/
 cookies.txt
 .DS_Store
 downloads/
+/dist/
+/build/
+node_modules/
+desktop/dist/
+android/.gradle/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/www/
+*.keystore
+*.jks

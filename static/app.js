@@ -3,6 +3,8 @@ const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const root = document.documentElement;
 const body = document.body;
+// Desktop app, Android app and the website demo provide window.YTHost (see README).
+const host = window.YTHost || null;
 const mqDark = matchMedia('(prefers-color-scheme: dark)');
 const mqMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const MAX_ZIP = +body.dataset.maxzip || 100;
@@ -34,9 +36,14 @@ const P = {
   check: '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
   stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/>',
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12"/>',
+  folder: '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+  edit: '<path d="M14.5 5.5l4 4M4.5 19.5l1-4.5L15 5.5a1.4 1.4 0 0 1 2 0l1.5 1.5a1.4 1.4 0 0 1 0 2L9 18.5z"/>',
+  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3M19.5 4.5v4h-4"/>',
+  paste: '<rect x="6" y="4.5" width="12" height="16" rx="2.5"/><path d="M9.5 4.5V3.8c0-.7.6-1.3 1.3-1.3h2.4c.7 0 1.3.6 1.3 1.3v.7M9 11h6M9 15h4"/>',
+  show: '<path d="M14 4.5h5.5V10M19.5 4.5l-8 8M17 14v4a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 5 18V8.5A1.5 1.5 0 0 1 6.5 7h4"/>',
 };
-const TXT = { load: 'laden', settings: 'optionen', close: 'zu', zip: 'zip', save: 'sichern', each: 'einzeln', check: 'auswahl', stop: 'stopp', trash: 'verlauf löschen' };
-const LONG = { load: 'Laden', zip: 'Als ZIP', save: 'Sichern', each: 'Einzeln', check: 'Alle auswählen', stop: 'Abbrechen', trash: 'Zuletzt geöffnet löschen' };
+const TXT = { load: 'laden', settings: 'optionen', close: 'zu', zip: 'zip', save: 'sichern', each: 'einzeln', check: 'auswahl', stop: 'stopp', trash: 'verlauf löschen', folder: 'ordner', edit: 'ändern', refresh: 'updates', paste: 'einfügen', show: 'zeigen' };
+const LONG = { load: 'Laden', zip: 'Als ZIP', save: 'Sichern', each: 'Einzeln', check: 'Alle auswählen', stop: 'Abbrechen', trash: 'Zuletzt geöffnet löschen', folder: 'Ordner', edit: 'Ändern', refresh: 'Nach Updates suchen', paste: 'Einfügen', show: 'Zeigen' };
 const CHIP = { idle: '', queue: 'Wartet', download: 'Lädt', convert: 'Wandelt um', done: 'Geladen', error: 'Fehler' };
 const ACTIVE = ['queue', 'download', 'convert'];
 const GET_HTML = `<span class="g-lbl"><svg viewBox="0 0 24 24"><path d="M12 5v11M7.5 11.5L12 16l4.5-4.5"/></svg>MP3</span>
@@ -53,7 +60,7 @@ const isField = t => t instanceof Element && t.closest('input,textarea,select,[c
 const isActive = r => ACTIVE.includes(r.st.status);
 const smooth = () => root.dataset.motion !== 'off';
 const fancy = () => theme === 'std' || theme === 'glass';
-const thumb = id => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
+const thumb = id => (host && host.thumb && host.thumb(id)) || `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 function fmtB(b) {
   const u = ['B', 'KB', 'MB', 'GB'];
   let i = 0;
@@ -124,6 +131,13 @@ function shake(el) { el.classList.remove('shake'); void el.offsetWidth; el.class
 
 // ---------- Server ----------
 async function api(path, data, method) {
+  if (host && host.api) {
+    // Android app / website demo answer the same API without a server.
+    const r = await host.api(method || (data ? 'POST' : 'GET'), path, data || null).catch(() => null);
+    if (!r) throw 'Keine Verbindung.';
+    if (r.status >= 400) throw (r.json && r.json.error) || 'Fehler ' + r.status;
+    return r.json;
+  }
   let r;
   try {
     r = await fetch(path, {
@@ -154,8 +168,10 @@ function applyLook(animate) {
       body.classList.add('t-' + theme);
       rebuild();
     }
+    const cs = getComputedStyle(body), bg = cs.getPropertyValue('--bg').trim() || '#0f0f10';
     const tc = $('meta[name=theme-color]');
-    if (tc) tc.content = getComputedStyle(body).getPropertyValue('--bg').trim() || '#1b1b1d';
+    if (tc) tc.content = bg;
+    if (host && host.theme) host.theme(bg, cs.getPropertyValue('--fg').trim());
     moveInds();
     topH();
   };
@@ -385,7 +401,7 @@ function update(r) {
   const g = r.q('.get');
   g.classList.toggle('zipped', !!inZip);
   const tip = inZip ? 'Wird in die ZIP gepackt' : st === 'download' || st === 'queue' || st === 'convert' ? 'Abbrechen'
-    : st === 'done' ? 'Nochmal sichern' : st === 'error' ? 'Erneut versuchen' : 'Als MP3 laden';
+    : st === 'done' ? (r.saved && host && host.reveal ? (host.revealLabel || 'Im Ordner zeigen') : 'Nochmal sichern') : st === 'error' ? 'Erneut versuchen' : 'Als MP3 laden';
   g.title = tip;
   g.setAttribute('aria-label', `${tip}: ${r.t.title}`);
   r.q('.msg').textContent = st === 'queue' ? (inZip ? 'Wartet auf seinen Platz in der ZIP…' : 'Wartet auf einen freien Platz…')
@@ -517,6 +533,7 @@ function renderMeta() {
   btn($('#allzip'), 'zip', all.length === 1 ? 'Als MP3 laden' : 'Alles als ZIP');
   $('#allzip').disabled = zipRunning || !all.length;
   $('#selall').hidden = all.length < 2;
+  $('#openf').hidden = !(host && host.openFolder);
 
   // Dock
   const dock = $('#dock'), din = $('.dock-in');
@@ -546,7 +563,8 @@ function zipProgress(s) {
 function renderZip() {
   const s = zip.state, total = s.tracks.length;
   if (s.status === 'done') {
-    $('#dhead').textContent = 'ZIP fertig';
+    btn($('#dsave'), zip.saved ? 'show' : 'save', zip.saved ? 'Zeigen' : 'Sichern');
+    $('#dhead').textContent = zip.saved ? 'ZIP gespeichert' : 'ZIP fertig';
     $('#dsub').textContent = [`${s.ok} Titel`, s.skipped ? `${s.skipped} übersprungen` : '', s.download_name].filter(Boolean).join(' · ');
     document.title = 'Fertig · YT Music → MP3';
     return;
@@ -566,6 +584,15 @@ const CASSETTE = (a, b) => `  .-----------------------.
   |      ___________      |
   '-----/_o_______o_\\-----'`;
 let reelTimer = 0;
+const WAVE = `<svg class="wave" viewBox="96 82 320 360" aria-hidden="true"><g><path d="M140 192v52"/><path d="M198 148v140"/><path d="M256 106v226"/><path d="M314 148v140"/><path d="M372 192v52"/></g><path class="chev" d="M194 366l62 52 62-52"/></svg>`;
+const STEPS = () => `<ol class="steps">
+  <li class="step"><div class="ill ill-link" aria-hidden="true"><span class="pill"><svg viewBox="0 0 24 24">${P.link}</svg><span class="typed">music.youtube.com/playlist</span></span></div>
+    <b>Link einfügen</b><small>Playlist, Album oder einzelner Titel – aus YouTube Music oder YouTube.</small></li>
+  <li class="step"><div class="ill ill-pick" aria-hidden="true">${'<span class="mini"><i></i><s></s></span>'.repeat(3)}</div>
+    <b>Auswählen</b><small>Alles ist vorausgewählt. Ein Tipp nimmt einen Titel heraus.</small></li>
+  <li class="step"><div class="ill ill-get" aria-hidden="true"><svg viewBox="0 0 40 40"><circle class="rt" cx="20" cy="20" r="15"/><circle class="rv" cx="20" cy="20" r="15" pathLength="100"/><path class="ok" d="M13.5 20.5l4.5 4.5 8.5-9" pathLength="1"/></svg><span>.mp3</span></div>
+    <b>Laden</b><small>Einzeln oder als ZIP – mit Titel, Interpret und Cover in jeder Datei.</small></li>
+</ol>`;
 
 function showWelcome() {
   cancelAll();
@@ -597,14 +624,16 @@ function renderEmpty(kind) {
   clearInterval(reelTimer);
   e.classList.remove('in', 'nothing');
   if (kind === 'welcome') {
-    const art = fancy() ? `<div class="eqart" aria-hidden="true">${'<i></i>'.repeat(7)}</div>`
-      : theme === 'ascii' ? `<pre aria-hidden="true">${CASSETTE('|', '|')}</pre>` : '<div></div>';
+    const art = fancy() ? WAVE : theme === 'ascii' ? `<pre aria-hidden="true">${CASSETTE('|', '|')}</pre>` : '<div></div>';
     e.innerHTML = `${art}<h2 class="f" data-w="16"></h2>
-      <p>Link von YouTube Music oder YouTube einfügen – Playlist, Album oder einzelner Titel. Dann auswählen und einzeln oder als ZIP laden.</p>
-      <div class="hints"><span class="k"><kbd>/</kbd> Link-Feld</span><span class="k"><kbd>Strg</kbd>+<kbd>V</kbd> irgendwo einfügen</span><span class="k">Link ins Fenster ziehen</span></div>
+      <p>Link aus YouTube Music oder YouTube einfügen, Titel auswählen, fertig. Jede Datei kommt mit Titel, Interpret und Cover.</p>
+      <div class="cta"><button class="primary paste" id="paste" type="button"></button>
+        <div class="hints"><span class="k"><kbd>Strg</kbd>+<kbd>V</kbd> irgendwo einfügen</span><span class="k"><kbd>/</kbd> Link-Feld</span><span class="k">Link ins Fenster ziehen</span></div></div>
+      ${STEPS()}
       ${recent.length ? `<div class="recent"><h3>Zuletzt geöffnet</h3><div class="rgrid">${recent.map((x, i) => `
         <button class="rc" data-url="${esc(x.url)}" style="animation-delay:${i * 40}ms">${x.thumb ? `<img src="${esc(x.thumb)}" alt="" loading="lazy">` : '<span class="ph"></span>'}
         <span><b>${esc(x.title)}</b><small>${x.count === 1 ? '1 Titel' : x.count + ' Titel'}</small></span><span class="x" role="button" tabindex="0" data-forget="${esc(x.url)}" aria-label="Aus Verlauf entfernen"><svg viewBox="0 0 24 24">${P.close}</svg></span></button>`).join('')}</div></div>` : '<div></div>'}`;
+    btn($('#paste', e), 'paste', 'Link einfügen');
     const h = $('h2', e), w = theme === 'flap' ? 'Link einfügen' : 'Aus Playlists werden MP3s.';
     h.dataset.w = w.length;
     setF(h, w);
@@ -644,10 +673,13 @@ const pending = [];
 let inflight = 0;
 const mp3Jobs = () => [...jobs.values()].filter(j => j.kind === 'mp3').length;
 
+const batchRows = new Set();   // Zeilen des laufenden MP3-Stapels (für den Fortschritt in der Taskleiste)
+
 function startMp3(r) {
   if (isActive(r)) return;
   r.job = null;
   r.br = prefs.bitrate;
+  batchRows.add(r);
   setState(r, { status: 'queue', pct: 0, speed: 0, eta: null, error: '' });
   pending.push(r);
   pump();
@@ -716,24 +748,40 @@ function cancelJob(id) {
 
 function cancelAll() {
   pending.length = 0;
+  batchRows.clear();
   [...jobs.keys()].forEach(cancelJob);
   for (const r of rows.values()) if (isActive(r)) { r.job = null; setState(r, { status: 'idle', pct: 0 }); }
   zip = null;
 }
 
-function save(id) {
+// Desktop and Android save straight into the download folder; browsers get a normal download.
+async function save(id, quiet) {
+  if (host && host.save) {
+    try {
+      const f = await host.save(id);
+      if (f && !quiet) toast(`„${f.name}“ gespeichert`, 'ok', showAction(f), 'saved');
+      return f || null;
+    } catch (e) {
+      toast(String((e && e.message) || e).replace(/^Error invoking remote method '\w+': (Error: )?/, ''), 'bad');
+      return null;
+    }
+  }
   const a = document.createElement('a');
   a.href = `/api/jobs/${id}/file`;
   a.download = '';
   document.body.append(a);
   a.click();
   a.remove();
+  return null;
 }
+const showAction = f => (f && host && host.reveal ? { label: host.revealLabel || 'Zeigen', fn: () => host.reveal(f.path) } : null);
+const folderAction = () => (host && host.openFolder ? { label: 'Ordner öffnen', fn: () => host.openFolder() } : null);
 
 function getClick(r) {
   const st = r.st.status;
   if (zip && r.job === zip.id && isActive(r)) return;
   if (isActive(r)) { if (r.job) cancelJob(r.job); else setState(r, { status: 'idle' }); return; }
+  if (st === 'done' && r.saved && host && host.reveal) { host.reveal(r.saved.path); return; }
   if (st === 'done' && r.file && Date.now() - r.doneAt < 25 * 60e3) { save(r.file); return; }
   startMp3(r);
 }
@@ -786,20 +834,29 @@ function applyJob(s) {
     if (s.status === 'done') {
       if (r) { r.file = s.id; r.doneAt = Date.now(); }
       batch.ok++;
-      save(s.id);
+      save(s.id).then(f => { if (r && f) { r.saved = f; update(r); } });
     } else if (s.status === 'error') {
       if (r && r.st.status !== 'error') setState(r, { status: 'error', error: s.error });
       toast(s.error || 'Download fehlgeschlagen', 'bad');
     }
     pump();
     if (!mp3Jobs() && !pending.length && !inflight) {
-      if (batch.ok > 1) done(`${batch.ok} MP3s sind fertig`);
+      if (batch.ok > 1) done(`${batch.ok} MP3s sind fertig`, folderAction());
       batch = { ok: 0 };
+      batchRows.clear();
     }
   } else if (zip && zip.id === s.id) {
     if (s.status === 'done') {
-      save(s.id);
-      done(`ZIP fertig: ${s.ok} Titel${s.skipped ? `, ${s.skipped} übersprungen` : ''}`);
+      const msg = `ZIP fertig: ${s.ok} Titel${s.skipped ? `, ${s.skipped} übersprungen` : ''}`;
+      if (host && host.save) {
+        save(s.id, true).then(f => {
+          if (zip && zip.id === s.id) { zip.saved = f; meta(); }
+          done(msg, showAction(f));
+        });
+      } else {
+        save(s.id);
+        done(msg);
+      }
     } else {
       if (s.status === 'error') toast(s.error || 'ZIP fehlgeschlagen', 'bad');
       zip = null;
@@ -814,8 +871,9 @@ function finished(r) {
   if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
 }
 
-function done(msg) {
-  toast(msg, 'ok');
+function done(msg, action) {
+  toast(msg, 'ok', action);
+  if (host && host.attention) host.attention();
   if (prefs.sound) chime();
   if (prefs.notify && 'Notification' in window && Notification.permission === 'granted' && (document.hidden || !document.hasFocus()))
     try { new Notification('YT Music → MP3', { body: msg, tag: 'ytmp3' }); } catch {}
@@ -843,7 +901,25 @@ function frame() {
     if (document.title !== tt && zip.state.status !== 'queue') document.title = tt;
   } else if (!zip && zipDrawn) $('.d-fill').style.width = '0';
   zipDrawn = !!zip;
+  if (host && host.progress) hostProgress();
   requestAnimationFrame(frame);
+}
+
+// Fortschritt für Taskleiste/Benachrichtigung: 0…1, oder -1 wenn nichts läuft
+let lastProg = -1;
+function hostProgress() {
+  let p = -1;
+  if (zip && !['done', 'error', 'cancelled'].includes(zip.state.status)) p = zip.shown / 100;
+  else if (batchRows.size) {
+    let sum = 0;
+    for (const r of batchRows) {
+      const st = r.st.status;
+      sum += st === 'done' || st === 'error' ? 1 : st === 'download' ? r.shown / 100 * .9 : st === 'convert' ? .95 : 0;
+    }
+    p = sum / batchRows.size;
+  }
+  const q = p < 0 ? -1 : Math.round(p * 200) / 200;
+  if (q !== lastProg) { lastProg = q; host.progress(q); }
 }
 
 // ---------- Meldungen ----------
@@ -858,11 +934,13 @@ function ask(title, text, ok) {
   return new Promise(res => d.addEventListener('close', () => res(d.returnValue === 'ok'), { once: true }));
 }
 
-function toast(msg, kind = 'info', action) {
+function toast(msg, kind = 'info', action, tag) {
   const box = $('#toasts');
+  if (tag) $$('.toast', box).forEach(x => { if (x.dataset.tag === tag) x.remove(); });
   while (box.children.length > 2) box.firstElementChild.remove();
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
+  if (tag) t.dataset.tag = tag;
   t.setAttribute('role', kind === 'bad' ? 'alert' : 'status');
   const s = document.createElement('span');
   s.textContent = msg;
@@ -924,6 +1002,38 @@ function openDrawer() {
   d.classList.remove('closing');
   if (!d.open) d.showModal();
   requestAnimationFrame(moveInds);
+  showFolder();
+  showAbout();
+}
+
+async function showFolder() {
+  if (!host || !host.getFolder) return;
+  $('#st-folder').hidden = false;
+  $('#chfolder').hidden = !host.chooseFolder;
+  const f = await host.getFolder().catch(() => '');
+  $('#folder').textContent = f;
+  $('#folder').title = f;
+}
+
+let info = null;
+async function showAbout() {
+  try { info = await api('/api/info'); } catch { return; }
+  $('#v-app').textContent = info.version || $('#v-app').textContent;
+  $('#v-ytdlp').textContent = (info.update && info.update.running) || info.ytdlp || '–';
+  showUpdate(info.update);
+}
+
+function showUpdate(u) {
+  const box = $('#upd');
+  box.hidden = !u || !Object.keys(u).length;
+  if (box.hidden) return;
+  const restart = !!(u.pending && host && host.restart);
+  $('#updmsg').textContent = u.checking ? 'Suche läuft…'
+    : u.updated ? `Auf ${u.running} aktualisiert.`
+      : u.pending ? `yt-dlp ${u.pending} ist geladen und wird beim nächsten Start aktiv.`
+        : u.error ? 'Update-Server nicht erreichbar.'
+          : u.latest ? 'Alles aktuell.' : 'yt-dlp wird automatisch aktuell gehalten.';
+  btn($('#updb'), 'refresh', restart ? 'Jetzt neu starten' : 'Nach Updates suchen');
 }
 function closeDrawer() {
   const d = $('#drawer');
@@ -940,6 +1050,27 @@ $('#setb').onclick = openDrawer;
 $('#drclose').onclick = closeDrawer;
 $('#drawer').addEventListener('cancel', e => { e.preventDefault(); closeDrawer(); });
 $('#drawer').addEventListener('click', e => { if (e.target === e.currentTarget) closeDrawer(); });
+$('#chfolder').onclick = async () => { await host.chooseFolder(); showFolder(); };
+$('#opfolder').onclick = () => host.openFolder();
+$('#openf').onclick = () => host && host.openFolder && host.openFolder();
+$('#updb').onclick = async () => {
+  const u = info && info.update;
+  if (u && u.pending && host && host.restart) {
+    if (jobs.size && !await ask('Jetzt neu starten?', 'Laufende Downloads werden dabei abgebrochen.', 'Neu starten')) return;
+    host.restart();
+    return;
+  }
+  const b = $('#updb');
+  b.disabled = true;
+  $('#updmsg').textContent = 'Suche läuft…';
+  try {
+    const st = await api('/api/update', {});
+    if (info) info.update = st;
+    if (st.running) $('#v-ytdlp').textContent = st.running;
+    showUpdate(st);
+  } catch (e) { $('#updmsg').textContent = String(e); }
+  finally { b.disabled = false; }
+};
 $('#forget').onclick = () => { store.set('ytmp3.recent', []); toast('Verlauf gelöscht', 'ok'); if (!pl) renderEmpty('welcome'); };
 
 const goHome = async () => {
@@ -983,10 +1114,24 @@ $('#zstop').onclick = async () => {
   zip = null;
   meta();
 };
-$('#dsave').onclick = () => { if (zip) save(zip.id); };
+$('#dsave').onclick = () => {
+  if (!zip) return;
+  if (zip.saved && host && host.reveal) host.reveal(zip.saved.path);
+  else save(zip.id);
+};
 $('#dclose').onclick = () => { zip = null; meta(); };
 
+// Link aus der Zwischenablage holen (Android liest sie nativ, Browser fragen evtl. nach)
+async function pasteLink() {
+  let t = '';
+  try { t = host && host.readClipboard ? await host.readClipboard() : await navigator.clipboard.readText(); } catch {}
+  if (pickUrl(t)) { loadPlaylist(t); return; }
+  toast(t ? 'In der Zwischenablage ist kein Link' : 'Kopiere zuerst einen Link – in YouTube Music über „Teilen → Link kopieren“', 'info');
+  $('#url').focus();
+}
+
 $('#empty').addEventListener('click', e => {
+  if (e.target.closest('#paste')) { pasteLink(); return; }
   const x = e.target.closest('[data-forget]');
   if (x) {
     e.stopPropagation();
@@ -1034,6 +1179,19 @@ addEventListener('drop', e => {
   loadPlaylist((e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')).split('\n').filter(l => !l.startsWith('#')).join(' '));
 });
 new ResizeObserver(topH).observe($('#top'));
+
+// Links von außen: Teilen-Menü (Android), zweiter Programmstart mit Link (Desktop)
+window.ytmp3 = {
+  open: url => loadPlaylist(url),
+  // Zurück-Taste (Android): erst Dialoge schließen, dann zur Startseite
+  back() {
+    const d = $('dialog[open]');
+    if (d) { d.id === 'drawer' ? closeDrawer() : d.close(); return true; }
+    if (pl && !jobs.size) { $('#url').value = ''; showWelcome(); return true; }
+    return false;
+  },
+};
+if (host && host.onOpenUrl) host.onOpenUrl(url => loadPlaylist(url));
 
 // ---------- Start ----------
 applyLook();
