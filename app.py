@@ -10,11 +10,14 @@ Python deps: see requirements.txt (Flask, yt-dlp).
 """
 
 import io
+import json
 import os
 import re
 import shutil
 import tempfile
 import threading
+import time
+import uuid
 import zipfile
 
 from flask import (
@@ -37,6 +40,13 @@ ALLOWED_BITRATES = {"128", "192", "256", "320"}
 
 # Limit how many tracks we will accept in one ZIP request to avoid abuse.
 MAX_ZIP_TRACKS = int(os.environ.get("MAX_ZIP_TRACKS", "100"))
+
+# Cache-buster for static/style.css and static/app.js.
+_STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+ASSET_VERSION = str(int(max(
+    (os.path.getmtime(os.path.join(_STATIC, f)) for f in os.listdir(_STATIC)),
+    default=0,
+)))
 
 
 def clean_bitrate(value) -> str:
@@ -78,7 +88,7 @@ def cookie_file():
 
 def base_ydl_opts() -> dict:
     """Common yt-dlp options: quiet + optional cookies / proxy / player client."""
-    opts = {"quiet": True, "no_warnings": True}
+    opts = {"quiet": True, "no_warnings": True, "noprogress": True}
     cookies = cookie_file()
     if cookies:
         opts["cookiefile"] = cookies
@@ -170,18 +180,34 @@ def extract_playlist(url: str) -> dict:
             }
         )
 
+    cover = None
+    if info.get("entries") is not None:
+        thumbs = info.get("thumbnails") or []
+        if thumbs:
+            cover = thumbs[-1].get("url")
     return {
         "title": info.get("title") or "Playlist",
+        "uploader": info.get("uploader") or info.get("channel") or "",
+        "thumbnail": cover,
+        "is_playlist": info.get("entries") is not None,
         "count": len(entries),
         "entries": entries,
     }
 
 
-def download_track_to_dir(video_url: str, out_dir: str, bitrate: str = AUDIO_BITRATE) -> str:
+def download_track_to_dir(
+    video_url: str,
+    out_dir: str,
+    bitrate: str = AUDIO_BITRATE,
+    progress_hooks=None,
+    postprocessor_hooks=None,
+) -> str:
     """Download a single track as MP3 into out_dir, return the file path."""
     outtmpl = os.path.join(out_dir, "%(title)s.%(ext)s")
     ydl_opts = {
         **base_ydl_opts(),
+        "progress_hooks": progress_hooks or [],
+        "postprocessor_hooks": postprocessor_hooks or [],
         "format": "bestaudio/best",
         "outtmpl": outtmpl,
         "postprocessors": [
@@ -218,6 +244,8 @@ def index():
         ffmpeg=ffmpeg_available(),
         bitrates=bitrates,
         default_bitrate=AUDIO_BITRATE,
+        max_zip=MAX_ZIP_TRACKS,
+        version=ASSET_VERSION,
     )
 
 
@@ -341,6 +369,285 @@ def api_download_zip():
         return response
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Background jobs with live progress
+#
+# The UI starts a job, polls its state and fetches the finished file. State
+# lives on disk (one folder per job) so every gunicorn worker can answer the
+# polls, no matter which worker runs the download.
+# ---------------------------------------------------------------------------
+
+JOBS_DIR = os.path.join(tempfile.gettempdir(), "ytmp3_jobs")
+JOB_TTL = int(os.environ.get("JOB_TTL", "1800"))  # seconds a finished job is kept
+MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL", "3"))  # per worker process
+_slots = threading.BoundedSemaphore(MAX_PARALLEL)
+_VIDEO_ID = re.compile(r"[\w-]{6,20}")
+_JOB_ID = re.compile(r"[0-9a-f]{32}")
+
+
+class Cancelled(Exception):
+    pass
+
+
+def job_dir(job_id: str) -> str:
+    return os.path.join(JOBS_DIR, job_id)
+
+
+def read_job(job_id: str):
+    if not _JOB_ID.fullmatch(job_id or ""):
+        return None
+    try:
+        with open(os.path.join(job_dir(job_id), "state.json"), encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def sweep_jobs():
+    """Delete job folders older than JOB_TTL."""
+    try:
+        names = os.listdir(JOBS_DIR)
+    except OSError:
+        return
+    limit = time.time() - JOB_TTL
+    for name in names:
+        path = os.path.join(JOBS_DIR, name)
+        try:
+            if os.path.getmtime(path) < limit:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            pass
+
+
+class Job:
+    """One MP3 or ZIP job. Writes its state to state.json, throttled."""
+
+    def __init__(self, kind, tracks, bitrate, name):
+        self.id = uuid.uuid4().hex
+        self.dir = job_dir(self.id)
+        os.makedirs(self.dir, exist_ok=True)
+        self.bitrate = bitrate
+        self.state = {
+            "id": self.id,
+            "kind": kind,
+            "name": name,
+            "status": "queue",
+            "error": "",
+            "ok": 0,
+            "skipped": 0,
+            "file": None,
+            "tracks": [
+                {"id": vid, "title": title, "status": "queue", "pct": 0,
+                 "speed": 0, "eta": None, "error": ""}
+                for vid, title in tracks
+            ],
+        }
+        self._last_write = 0.0
+        self.write(force=True)
+
+    def write(self, force=False):
+        now = time.monotonic()
+        if not force and now - self._last_write < 0.25:
+            return
+        self._last_write = now
+        tmp = os.path.join(self.dir, "state.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(self.state, fh)
+        os.replace(tmp, os.path.join(self.dir, "state.json"))
+
+    def cancelled(self):
+        return os.path.exists(os.path.join(self.dir, "cancel"))
+
+    def fetch(self, track, out_dir):
+        """Download one track into out_dir, reporting progress into track."""
+
+        def on_progress(d):
+            if self.cancelled():
+                raise Cancelled()
+            if d.get("status") == "downloading":
+                total = d.get("total_bytes") or d.get("total_bytes_estimate")
+                got = d.get("downloaded_bytes") or 0
+                track["status"] = "download"
+                track["pct"] = round(got / total * 100, 1) if total else 0
+                track["speed"] = d.get("speed") or 0
+                track["eta"] = d.get("eta")
+                self.write()
+            elif d.get("status") == "finished":
+                track.update(status="convert", pct=100, speed=0, eta=None)
+                self.write(force=True)
+
+        def on_post(d):
+            if self.cancelled():
+                raise Cancelled()
+            if d.get("status") == "started" and track["status"] != "convert":
+                track.update(status="convert", pct=100, speed=0, eta=None)
+                self.write(force=True)
+
+        track.update(status="download", pct=0)
+        self.write(force=True)
+        return download_track_to_dir(
+            f"https://www.youtube.com/watch?v={track['id']}",
+            out_dir,
+            self.bitrate,
+            progress_hooks=[on_progress],
+            postprocessor_hooks=[on_post],
+        )
+
+    def run(self):
+        try:
+            with _slots:
+                if self.cancelled():
+                    raise Cancelled()
+                self.state["status"] = "run"
+                self.write(force=True)
+                if self.state["kind"] == "zip":
+                    self._run_zip()
+                else:
+                    self._run_mp3()
+        except Cancelled:
+            self.state.update(status="cancelled", error="Abgebrochen.")
+            for t in self.state["tracks"]:
+                if t["status"] not in ("done", "error"):
+                    t.update(status="cancelled", speed=0, eta=None)
+        except Exception as exc:  # noqa: BLE001 - surface to the UI
+            if self.cancelled():
+                self.state.update(status="cancelled", error="Abgebrochen.")
+            else:
+                self.state.update(status="error", error=friendly_error(exc))
+        self.write(force=True)
+
+    def _run_mp3(self):
+        track = self.state["tracks"][0]
+        try:
+            mp3 = self.fetch(track, self.dir)
+        except Cancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if self.cancelled():
+                raise Cancelled() from exc
+            track.update(status="error", error=friendly_error(exc), speed=0, eta=None)
+            raise
+        if not mp3 or not os.path.exists(mp3):
+            track.update(status="error", error="Konvertierung lieferte keine MP3-Datei.")
+            raise RuntimeError("Konvertierung lieferte keine MP3-Datei.")
+        name = safe_filename(os.path.splitext(os.path.basename(mp3))[0]) + ".mp3"
+        track.update(status="done", pct=100, speed=0, eta=None)
+        self.state.update(status="done", ok=1, file=os.path.basename(mp3), download_name=name)
+
+    def _run_zip(self):
+        skipped = []
+        zip_path = os.path.join(self.dir, "bundle.zip")
+        used = set()
+        # MP3 is already compressed, so ZIP_STORED is just as small and much faster.
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            for track in self.state["tracks"]:
+                if self.cancelled():
+                    raise Cancelled()
+                track_dir = tempfile.mkdtemp(prefix="t_", dir=self.dir)
+                try:
+                    mp3 = self.fetch(track, track_dir)
+                    if not mp3 or not os.path.exists(mp3):
+                        raise RuntimeError("Konvertierung lieferte keine MP3-Datei.")
+                    arc = safe_filename(os.path.splitext(os.path.basename(mp3))[0]) + ".mp3"
+                    candidate, n = arc, 2
+                    while candidate in used:
+                        candidate = f"{arc[:-4]} ({n}).mp3"
+                        n += 1
+                    used.add(candidate)
+                    zf.write(mp3, arcname=candidate)
+                    track.update(status="done", pct=100, speed=0, eta=None)
+                    self.state["ok"] = len(used)
+                except Cancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - skip failed tracks, keep going
+                    if self.cancelled():
+                        raise Cancelled() from exc
+                    reason = friendly_error(exc)
+                    track.update(status="error", error=reason, speed=0, eta=None)
+                    skipped.append((track["title"] or track["id"], reason))
+                    self.state["skipped"] = len(skipped)
+                finally:
+                    shutil.rmtree(track_dir, ignore_errors=True)
+                self.write(force=True)
+
+            if not used:
+                detail = f" Grund: {skipped[-1][1]}" if skipped else ""
+                raise RuntimeError(f"Kein Titel konnte heruntergeladen werden.{detail}")
+            if skipped:
+                report = "Diese Titel konnten nicht heruntergeladen werden:\n\n"
+                report += "\n".join(f"- {t}\n  Grund: {r}" for t, r in skipped)
+                zf.writestr("_Uebersprungene Titel.txt", report)
+
+        self.state.update(
+            status="done",
+            file="bundle.zip",
+            download_name=f"{safe_filename(self.state['name'] or 'playlist')}.zip",
+        )
+
+
+@app.route("/api/jobs", methods=["POST"])
+def api_jobs_create():
+    """Start an MP3 job (one id) or a ZIP job (zip: true, many ids)."""
+    if not ffmpeg_available():
+        return jsonify({"error": "ffmpeg ist nicht installiert (für MP3 nötig)."}), 500
+    data = request.get_json(silent=True) or {}
+    ids = data.get("ids") or []
+    if not isinstance(ids, list):
+        return jsonify({"error": "Keine Titel ausgewählt."}), 400
+    ids = list(dict.fromkeys(i for i in ids if isinstance(i, str) and _VIDEO_ID.fullmatch(i)))
+    if not ids:
+        return jsonify({"error": "Keine gültigen Titel ausgewählt."}), 400
+    as_zip = bool(data.get("zip"))
+    if not as_zip and len(ids) != 1:
+        return jsonify({"error": "Ein MP3-Auftrag braucht genau einen Titel."}), 400
+    if len(ids) > MAX_ZIP_TRACKS:
+        return jsonify({"error": f"Maximal {MAX_ZIP_TRACKS} Titel pro ZIP."}), 400
+    titles = data.get("titles") if isinstance(data.get("titles"), dict) else {}
+
+    sweep_jobs()
+    job = Job(
+        "zip" if as_zip else "mp3",
+        [(i, str(titles.get(i) or "")[:300]) for i in ids],
+        clean_bitrate(data.get("bitrate")),
+        str(data.get("name") or "playlist")[:200],
+    )
+    threading.Thread(target=job.run, daemon=True).start()
+    return jsonify(job.state), 201
+
+
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+def api_jobs_get(job_id):
+    state = read_job(job_id)
+    if state is None:
+        return jsonify({"error": "Auftrag nicht gefunden (abgelaufen?)."}), 404
+    return jsonify(state)
+
+
+@app.route("/api/jobs/<job_id>", methods=["DELETE"])
+def api_jobs_cancel(job_id):
+    if read_job(job_id) is None:
+        return jsonify({"error": "Auftrag nicht gefunden."}), 404
+    open(os.path.join(job_dir(job_id), "cancel"), "w").close()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/jobs/<job_id>/file", methods=["GET"])
+def api_jobs_file(job_id):
+    state = read_job(job_id)
+    if not state or state.get("status") != "done" or not state.get("file"):
+        return jsonify({"error": "Datei ist (noch) nicht bereit."}), 404
+    path = os.path.join(job_dir(job_id), os.path.basename(state["file"]))
+    if not os.path.isfile(path):
+        return jsonify({"error": "Datei ist abgelaufen. Bitte neu laden."}), 410
+    return send_file(
+        path,
+        mimetype="application/zip" if state["kind"] == "zip" else "audio/mpeg",
+        as_attachment=True,
+        download_name=state.get("download_name") or os.path.basename(path),
+        max_age=0,
+    )
 
 
 if __name__ == "__main__":

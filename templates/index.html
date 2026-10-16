@@ -1,58 +1,194 @@
-<!DOCTYPE html>
-<html lang="de">
+<!doctype html>
+<html lang="de" data-scheme="dark" data-motion="full">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0f0f12" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="format-detection" content="telephone=no" />
-  <title>YT Music → MP3 Downloader</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="format-detection" content="telephone=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#1b1b1d">
+<title>YT Music → MP3</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230a6cff'/%3E%3Cpath d='M10 16.5V6.5l7-1.5v9' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='16.5' r='2' fill='white'/%3E%3Ccircle cx='15' cy='14.5' r='2' fill='white'/%3E%3C/svg%3E">
+<script>
+/* Vor dem ersten Zeichnen: gespeichertes Design anwenden, damit nichts aufblitzt */
+(function () {
+  try {
+    var p = JSON.parse(localStorage.getItem('ytmp3.prefs') || '{}'), r = document.documentElement;
+    var dark = p.scheme === 'dark' || (p.scheme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    r.dataset.scheme = dark ? 'dark' : 'light';
+    r.dataset.boot = ['std', 'glass', 'ascii', 'flap'].indexOf(p.theme) >= 0 ? p.theme : 'std';
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
 </head>
-<body>
-  <div class="wrap">
-    <header>
-      <h1>🎵 YT Music → MP3</h1>
-      <p class="sub">Playlist-Link einfügen, Titel auswählen und einzeln als MP3 oder gesammelt als ZIP herunterladen.</p>
-    </header>
+<body class="t-std" data-bitrate="{{ default_bitrate }}" data-ffmpeg="{{ 1 if ffmpeg else 0 }}" data-maxzip="{{ max_zip }}">
+<script>document.body.className = 't-' + (document.documentElement.dataset.boot || 'std');</script>
+<div class="blobs" aria-hidden="true"><b></b><b></b><b></b></div>
 
-    {% if not ffmpeg %}
-    <div class="banner warn">
-      ⚠️ <strong>ffmpeg</strong> wurde nicht gefunden. Die MP3-Konvertierung funktioniert erst, wenn ffmpeg installiert ist.
-    </div>
-    {% endif %}
-
-    <form id="loadForm" class="search">
-      <input id="urlInput" type="text" placeholder="https://music.youtube.com/playlist?list=..." autocomplete="off" />
-      <select id="bitrate" title="MP3-Qualität">
-        {% for b in bitrates %}
-        <option value="{{ b }}" {% if b == default_bitrate %}selected{% endif %}>{{ b }} kbps</option>
-        {% endfor %}
-      </select>
-      <button id="loadBtn" type="submit">Laden</button>
-    </form>
-
-    <div id="status" class="status"></div>
-
-    <section id="results" class="results hidden">
-      <div class="toolbar">
-        <div class="meta">
-          <h2 id="plTitle"></h2>
-          <span id="plCount" class="count"></span>
-        </div>
-        <div class="actions">
-          <label class="checkall"><input type="checkbox" id="selectAll" checked /> Alle</label>
-          <button id="zipBtn" type="button" class="primary">Auswahl als ZIP</button>
-        </div>
-      </div>
-      <ul id="trackList" class="tracks"></ul>
-    </section>
-
-    <footer>
-      <p>Nur für Inhalte verwenden, an denen du die Rechte besitzt.</p>
-    </footer>
+<header class="top" id="top">
+  <div class="brand" id="home" role="button" tabindex="0" aria-label="Zur Startseite">
+<pre id="banner" aria-hidden="true">__   _______ __  __ _____  __  __ ___ ____
+\ \ / /_   _|  \/  / __\ \|  \/  | _ \__ /
+ \ V /  | | | |\/| \__ \&gt; &gt; |\/| |  _/|_ \
+  |_|   |_| |_|  |_|___/_/|_|  |_|_| |___/</pre>
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+    <span class="logo f" data-w="12">YT Music <em>→</em> MP3</span>
   </div>
+  <form id="loadf" class="add" autocomplete="off">
+    <span class="add-ic" data-ic="link"></span>
+    <input id="url" type="text" inputmode="url" placeholder="Playlist- oder Video-Link einfügen…" aria-label="Playlist- oder Video-Link" spellcheck="false" autocapitalize="off" autocorrect="off" enterkeyhint="go">
+    <button class="primary" id="loadb" data-ic="load" data-txt aria-label="Playlist laden"></button>
+  </form>
+  <button class="icon" id="setb" data-ic="settings" aria-label="Einstellungen" title="Einstellungen (Strg+,)"></button>
+</header>
 
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
+{% if not ffmpeg %}
+<div class="warnbar" role="alert"><div><strong>ffmpeg</strong> wurde nicht gefunden. Die MP3-Umwandlung funktioniert erst, wenn ffmpeg installiert ist.</div></div>
+{% endif %}
+
+<section id="hero" hidden aria-labelledby="pltitle">
+  <div class="hero-card">
+    <div class="hero-bg" id="herobg"></div>
+    <div class="hero-in">
+      <div class="cover" id="cover"></div>
+      <div class="hero-txt">
+        <span class="eyebrow" id="kind">Playlist</span>
+        <h1 id="pltitle" class="f" data-w="22"></h1>
+        <p id="plmeta"></p>
+      </div>
+      <div class="hero-acts">
+        <button class="primary" id="allzip" data-ic="zip" data-txt></button>
+        <button id="selall" data-ic="check" data-txt></button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<nav class="toolbar" id="toolbar" hidden>
+  <div class="tabs" role="tablist" aria-label="Filter">
+    <span class="ind" aria-hidden="true"></span>
+    <button role="tab" data-f="all">Alle <b>0</b></button>
+    <button role="tab" data-f="sel">Ausgewählt <b>0</b></button>
+    <button role="tab" data-f="done">Geladen <b>0</b></button>
+    <button role="tab" data-f="err">Fehler <b>0</b></button>
+  </div>
+  <div class="tools">
+    <label class="find"><span data-ic="search"></span><input id="find" type="search" placeholder="Titel suchen" aria-label="Titel suchen" spellcheck="false"></label>
+    <div class="seg q" role="radiogroup" aria-label="MP3-Qualität" title="MP3-Qualität">
+      <span class="ind" aria-hidden="true"></span>
+      {% for b in bitrates %}<label><input type="radio" name="q1" data-p="bitrate" value="{{ b }}"><span>{{ b }}<small>k</small></span></label>{% endfor %}
+    </div>
+  </div>
+</nav>
+
+<main id="list" aria-live="polite"></main>
+<div id="empty"></div>
+
+<div id="dock" aria-live="polite">
+  <div class="dock-in" data-m="sel">
+    <div class="d-fill"></div>
+    <div class="dp dp-sel">
+      <div class="txt"><b><span class="roll" id="selcount"><span>0</span></span> <span id="selword">Titel ausgewählt</span></b><small id="selinfo"></small></div>
+      <button id="each" class="hide-s" data-ic="each" data-txt title="Jeden ausgewählten Titel als eigene MP3 laden"></button>
+      <button id="zipsel" class="primary" data-ic="zip" data-txt></button>
+    </div>
+    <div class="dp dp-zip">
+      <div class="dmini"><svg viewBox="0 0 38 38"><circle class="rt" cx="19" cy="19" r="15.9"/><circle class="rv" cx="19" cy="19" r="15.9" pathLength="100"/></svg><span id="zpct">0</span></div>
+      <div class="txt"><b id="zhead">ZIP wird erstellt</b><small id="zsub"></small></div>
+      <button id="zstop" data-ic="stop" data-txt></button>
+    </div>
+    <div class="dp dp-done">
+      <span class="dok"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg></span>
+      <div class="txt"><b id="dhead">ZIP fertig</b><small id="dsub"></small></div>
+      <button id="dsave" class="primary" data-ic="save" data-txt></button>
+      <button id="dclose" class="icon" data-ic="close" aria-label="Schließen"></button>
+    </div>
+  </div>
+</div>
+
+<dialog id="drawer" class="drawer" aria-labelledby="st-h">
+  <div class="dr-in">
+    <div class="dr-head"><h2 id="st-h">Einstellungen</h2><button class="icon" id="drclose" data-ic="close" aria-label="Schließen"></button></div>
+    <div class="dr-body">
+      <section><h3>Darstellung</h3>
+        <div class="field"><span class="lbl">Design</span>
+          <div class="themes">
+            <label><input type="radio" name="theme" data-p="theme" value="std"><div class="pv p-std"><span>Aa</span></div>Standard</label>
+            <label><input type="radio" name="theme" data-p="theme" value="glass"><div class="pv p-glass"><span>Glas</span></div>Glas</label>
+            <label><input type="radio" name="theme" data-p="theme" value="ascii"><div class="pv p-ascii">[##..]_</div>ASCII</label>
+            <label><input type="radio" name="theme" data-p="theme" value="flap"><div class="pv p-flap"><b>M</b><b>P</b><b>3</b></div>Split-Flap</label>
+          </div>
+        </div>
+        <div class="field"><span class="lbl">Farbschema</span>
+          <div class="seg"><span class="ind" aria-hidden="true"></span>
+            <label><input type="radio" name="scheme" data-p="scheme" value="system"><span>System</span></label>
+            <label><input type="radio" name="scheme" data-p="scheme" value="light"><span>Hell</span></label>
+            <label><input type="radio" name="scheme" data-p="scheme" value="dark"><span>Dunkel</span></label>
+          </div>
+        </div>
+        <div class="field"><span class="lbl">Akzentfarbe</span>
+          <div class="swatches">
+            <label title="Passend zum Design"><input type="radio" name="accent" data-p="accent" value="auto"><span class="auto"></span></label>
+            <label title="Rot"><input type="radio" name="accent" data-p="accent" value="#ff3b4f"><span style="--s:#ff3b4f"></span></label>
+            <label title="Orange"><input type="radio" name="accent" data-p="accent" value="#ff7a45"><span style="--s:#ff7a45"></span></label>
+            <label title="Gelb"><input type="radio" name="accent" data-p="accent" value="#f5c400"><span style="--s:#f5c400"></span></label>
+            <label title="Grün"><input type="radio" name="accent" data-p="accent" value="#2fd889"><span style="--s:#2fd889"></span></label>
+            <label title="Cyan"><input type="radio" name="accent" data-p="accent" value="#22c7f0"><span style="--s:#22c7f0"></span></label>
+            <label title="Violett"><input type="radio" name="accent" data-p="accent" value="#8b78ff"><span style="--s:#8b78ff"></span></label>
+            <label title="Pink"><input type="radio" name="accent" data-p="accent" value="#ff4f9a"><span style="--s:#ff4f9a"></span></label>
+          </div>
+        </div>
+        <div class="field"><span class="lbl">Animationen</span>
+          <div class="seg"><span class="ind" aria-hidden="true"></span>
+            <label><input type="radio" name="motion" data-p="motion" value="auto"><span>System</span></label>
+            <label><input type="radio" name="motion" data-p="motion" value="full"><span>Voll</span></label>
+            <label><input type="radio" name="motion" data-p="motion" value="reduced"><span>Wenig</span></label>
+            <label><input type="radio" name="motion" data-p="motion" value="off"><span>Aus</span></label>
+          </div>
+        </div>
+        <label class="tog"><span>Kompakte Liste<small>Kleinere Zeilen, mehr Titel auf einen Blick</small></span><input type="checkbox" data-p="compact"><i></i></label>
+      </section>
+
+      <section><h3>Downloads</h3>
+        <div class="field"><span class="lbl">MP3-Qualität</span>
+          <div class="seg q"><span class="ind" aria-hidden="true"></span>
+            {% for b in bitrates %}<label><input type="radio" name="q2" data-p="bitrate" value="{{ b }}"><span>{{ b }} kbps</span></label>{% endfor %}
+          </div>
+        </div>
+        <label class="tog"><span>Beim Einfügen sofort laden<small>Ein eingefügter Link wird direkt geöffnet, ohne Klick auf „Laden“</small></span><input type="checkbox" data-p="autoload"><i></i></label>
+      </section>
+
+      <section><h3>Benachrichtigungen</h3>
+        <label class="tog"><span>Ton bei Fertig<small>Kurzer Klang, wenn eine ZIP oder alle MP3s fertig sind</small></span><input type="checkbox" data-p="sound"><i></i></label>
+        <label class="tog"><span>Desktop-Meldung<small>Wenn das Fenster im Hintergrund liegt</small></span><input type="checkbox" data-p="notify"><i></i></label>
+      </section>
+
+      <section><h3>Verlauf</h3>
+        <button id="forget" class="wide" data-ic="trash" data-txt></button>
+      </section>
+
+      <section class="about"><h3>Über</h3>
+        <p>YT Music → MP3 · MIT-Lizenz · <a href="https://github.com/Emre1001/Ytms-to-mp3" target="_blank" rel="noopener">GitHub</a></p>
+        <p><kbd>/</kbd> Link-Feld · <kbd>Strg</kbd>+<kbd>V</kbd> Link irgendwo einfügen · <kbd>Strg</kbd>+<kbd>A</kbd> alle auswählen · <kbd>Strg</kbd>+<kbd>,</kbd> Einstellungen</p>
+        <p>Nur für Inhalte verwenden, an denen du die Rechte besitzt.</p>
+      </section>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="ask" class="ask">
+  <form method="dialog">
+    <h2 id="ask-t"></h2>
+    <p id="ask-p"></p>
+    <div class="row"><button value="no" id="ask-no">Behalten</button><button value="ok" id="ask-ok" class="danger"></button></div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+<div id="drop" aria-hidden="true"><div><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Link hier ablegen</div></div>
+
+<script src="{{ url_for('static', filename='app.js') }}?v={{ version }}"></script>
 </body>
 </html>
