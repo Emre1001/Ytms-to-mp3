@@ -76,7 +76,7 @@ Downloads laufen mit Benachrichtigung im Hintergrund weiter.
 
 1. **Link rein.** Playlist, Album, Mix oder ein einzelner Song – aus YouTube Music oder YouTube. Einfügen mit <kbd>Strg</kbd>+<kbd>V</kbd> irgendwo im Fenster, per Ziehen oder auf dem Handy über *Teilen*.
 2. **Erst die Liste.** [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) liest nur das Inhaltsverzeichnis – Titel, Interpret, Dauer, Cover – ohne einen Song zu laden. Darum steht auch eine Playlist mit 100 Titeln nach Sekunden da.
-3. **Nur der Ton.** Für jeden ausgewählten Titel wird die beste Tonspur geholt (meist Opus, sonst AAC) – kein Video, kein fremder Server dazwischen. Drei Titel gleichzeitig, mit echtem Fortschritt: Prozent, Tempo, Restzeit.
+3. **Nur der Ton.** Für jeden ausgewählten Titel wird die beste Tonspur geholt (meist Opus, sonst AAC) – kein Video, kein fremder Server dazwischen. Bis zu acht Titel laden gleichzeitig – auch innerhalb einer ZIP –, jeder mit echtem Fortschritt: Prozent, Tempo, Restzeit.
 4. **Fertig als MP3.** `ffmpeg` wandelt mit LAME in MP3 um (128–320 kbps, du wählst), schreibt Titel, Interpret und Album hinein und schneidet das Cover aufs Quadrat zu. Dateiname: `Interpret - Titel.mp3`.
 5. **Alles in eine ZIP.** Ist ein Song gesperrt oder gelöscht, läuft die ZIP trotzdem durch – `_Uebersprungene Titel.txt` sagt dir, welcher fehlt und warum.
 
@@ -85,12 +85,13 @@ Downloads laufen mit Benachrichtigung im Hintergrund weiter.
 - **Alles bleibt bei dir.** Die App läuft auf deinem Gerät und spricht nur mit YouTube. Kein Konto, keine Werbung, kein Tracking.
 - **Bleibt von selbst aktuell.** YouTube ändert ständig etwas. Die App holt sich einmal am Tag das neueste `yt-dlp` (mit Prüfsumme) – am Computer aktiv ab dem nächsten Start, auf Android sofort.
 - **Ehrlich.** Fortschritt kommt direkt vom Download, Fehler werden auf Deutsch erklärt, und 320 kbps macht eine Quelle nicht besser, als sie ist – 192 kbps ist der Standard.
+- **Viele auf einmal.** Titel laden parallel statt nacheinander – auch in einer ZIP. In den Einstellungen wählst du 2, 4, 6 oder 8 gleichzeitig (Standard: 4); eine lange Playlist ist so um ein Vielfaches schneller fertig.
 - **Schlank.** Statt eines kompletten ffmpeg (~150 MB) steckt ein eigener Build drin, der nur Audio → MP3 und Cover kann (~5 MB).
 - **Vier Designs.** Standard, Glas, ASCII und Split-Flap, jeweils hell und dunkel, mit eigener Akzentfarbe und drei Animationsstufen.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/readme/app-dark.webp">
-  <img alt="Die App mit einer geladenen Playlist: drei Titel laden gleichzeitig, Fortschrittsringe, Qualitätswahl und Filter" src="docs/readme/app-light.webp" width="100%">
+  <img alt="Die App mit einer geladenen Playlist: mehrere Titel laden gleichzeitig, Fortschrittsringe, Qualitätswahl und Filter" src="docs/readme/app-light.webp" width="100%">
 </picture>
 
 ### Tastenkürzel
@@ -196,7 +197,7 @@ Die Konfiguration (`render.yaml` + `Dockerfile`) liegt im Repo. Alles geht im Ha
 | `PORT` | `5000` | Port des Webservers |
 | `AUDIO_BITRATE` | `192` | Standard-Bitrate in kbps (die Auswahl in der App hat Vorrang) |
 | `MAX_ZIP_TRACKS` | `100` | Max. Titel pro ZIP |
-| `MAX_PARALLEL` | `3` | Gleichzeitige Downloads pro Server-Prozess |
+| `MAX_PARALLEL` | `8` | Titel, die pro Server-Prozess höchstens gleichzeitig laden (die App wählt 2–8, Standard 4) |
 | `JOB_TTL` | `1800` | Sekunden, die fertige Dateien zum erneuten Sichern liegen bleiben |
 | `EMBED_META` | `1` | `0` = keine Tags/Cover in die MP3s schreiben |
 | `FFMPEG_LOCATION` | – | Pfad zu ffmpeg (Datei oder Ordner), sonst `PATH` |

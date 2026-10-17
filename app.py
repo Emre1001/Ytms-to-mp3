@@ -289,6 +289,8 @@ def download_track_to_dir(
         "postprocessors": postprocessors,
         "writethumbnail": EMBED_META,
         "postprocessor_args": {"thumbnailsconvertor+ffmpeg_o": _COVER_ARGS},
+        # Fragmented streams (DASH/HLS) load several pieces at once.
+        "concurrent_fragment_downloads": 4,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         try:
@@ -329,6 +331,8 @@ def index():
         max_zip=MAX_ZIP_TRACKS,
         version=ASSET_VERSION,
         app_version=APP_VERSION,
+        parallel_options=PARALLEL_OPTIONS,
+        default_parallel=DEFAULT_WORKERS,
     )
 
 
@@ -479,8 +483,12 @@ def api_download_zip():
 
 JOBS_DIR = os.path.join(tempfile.gettempdir(), "ytmp3_jobs")
 JOB_TTL = int(os.environ.get("JOB_TTL", "1800"))  # seconds a finished job is kept
-MAX_PARALLEL = int(os.environ.get("MAX_PARALLEL", "3"))  # per worker process
-_slots = threading.BoundedSemaphore(MAX_PARALLEL)
+# Tracks that download at the same time, across all jobs of this process. Each
+# ZIP also fetches several tracks in parallel (the "workers" the UI asks for).
+MAX_PARALLEL = max(1, int(os.environ.get("MAX_PARALLEL", "8")))
+DEFAULT_WORKERS = min(4, MAX_PARALLEL)
+PARALLEL_OPTIONS = [n for n in (2, 4, 6, 8) if n <= MAX_PARALLEL] or [MAX_PARALLEL]
+_track_slots = threading.BoundedSemaphore(MAX_PARALLEL)
 _VIDEO_ID = re.compile(r"[\w-]{6,20}")
 _JOB_ID = re.compile(r"[0-9a-f]{32}")
 
@@ -520,13 +528,19 @@ def sweep_jobs():
 
 
 class Job:
-    """One MP3 or ZIP job. Writes its state to state.json, throttled."""
+    """One MP3 or ZIP job. Writes its state to state.json, throttled.
 
-    def __init__(self, kind, tracks, bitrate, name):
+    A ZIP job runs several worker threads; each track holds one of the
+    process-wide track slots while it downloads and converts.
+    """
+
+    def __init__(self, kind, tracks, bitrate, name, workers=DEFAULT_WORKERS):
         self.id = uuid.uuid4().hex
         self.dir = job_dir(self.id)
         os.makedirs(self.dir, exist_ok=True)
         self.bitrate = bitrate
+        self.workers = max(1, min(int(workers), MAX_PARALLEL))
+        self._lock = threading.RLock()
         self.state = {
             "id": self.id,
             "kind": kind,
@@ -546,14 +560,15 @@ class Job:
         self.write(force=True)
 
     def write(self, force=False):
-        now = time.monotonic()
-        if not force and now - self._last_write < 0.25:
-            return
-        self._last_write = now
-        tmp = os.path.join(self.dir, "state.json.tmp")
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(self.state, fh)
-        os.replace(tmp, os.path.join(self.dir, "state.json"))
+        with self._lock:
+            now = time.monotonic()
+            if not force and now - self._last_write < 0.25:
+                return
+            self._last_write = now
+            tmp = os.path.join(self.dir, "state.json.tmp")
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self.state, fh)
+            os.replace(tmp, os.path.join(self.dir, "state.json"))
 
     def cancelled(self):
         return os.path.exists(os.path.join(self.dir, "cancel"))
@@ -583,27 +598,29 @@ class Job:
                 track.update(status="convert", pct=100, speed=0, eta=None)
                 self.write(force=True)
 
-        track.update(status="download", pct=0)
-        self.write(force=True)
-        return download_track_to_dir(
-            f"https://www.youtube.com/watch?v={track['id']}",
-            out_dir,
-            self.bitrate,
-            progress_hooks=[on_progress],
-            postprocessor_hooks=[on_post],
-        )
+        with _track_slots:
+            if self.cancelled():
+                raise Cancelled()
+            track.update(status="download", pct=0)
+            self.write(force=True)
+            return download_track_to_dir(
+                f"https://www.youtube.com/watch?v={track['id']}",
+                out_dir,
+                self.bitrate,
+                progress_hooks=[on_progress],
+                postprocessor_hooks=[on_post],
+            )
 
     def run(self):
         try:
-            with _slots:
-                if self.cancelled():
-                    raise Cancelled()
-                self.state["status"] = "run"
-                self.write(force=True)
-                if self.state["kind"] == "zip":
-                    self._run_zip()
-                else:
-                    self._run_mp3()
+            if self.cancelled():
+                raise Cancelled()
+            self.state["status"] = "run"
+            self.write(force=True)
+            if self.state["kind"] == "zip":
+                self._run_zip()
+            else:
+                self._run_mp3()
         except Cancelled:
             self.state.update(status="cancelled", error="Abgebrochen.")
             for t in self.state["tracks"]:
@@ -638,37 +655,64 @@ class Job:
         skipped = []
         zip_path = os.path.join(self.dir, "bundle.zip")
         used = set()
-        # MP3 is already compressed, so ZIP_STORED is just as small and much faster.
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
-            for track in self.state["tracks"]:
-                if self.cancelled():
-                    raise Cancelled()
+        todo = list(self.state["tracks"])
+        failure = []
+
+        def worker(zf):
+            while True:
+                with self._lock:
+                    if failure or not todo or self.cancelled():
+                        return
+                    track = todo.pop(0)
                 track_dir = tempfile.mkdtemp(prefix="t_", dir=self.dir)
                 try:
                     mp3 = self.fetch(track, track_dir)
                     if not mp3 or not os.path.exists(mp3):
                         raise RuntimeError("Konvertierung lieferte keine MP3-Datei.")
-                    arc = safe_filename(os.path.splitext(os.path.basename(mp3))[0]) + ".mp3"
+                except Cancelled:
+                    shutil.rmtree(track_dir, ignore_errors=True)
+                    return
+                except Exception as exc:  # noqa: BLE001 - skip failed tracks, keep going
+                    shutil.rmtree(track_dir, ignore_errors=True)
+                    if self.cancelled():
+                        return
+                    reason = friendly_error(exc)
+                    with self._lock:
+                        track.update(status="error", error=reason, speed=0, eta=None)
+                        skipped.append((track["title"] or track["id"], reason))
+                        self.state["skipped"] = len(skipped)
+                    self.write(force=True)
+                    continue
+                arc = safe_filename(os.path.splitext(os.path.basename(mp3))[0]) + ".mp3"
+                with self._lock:  # ZipFile isn't thread-safe: one writer at a time
                     candidate, n = arc, 2
                     while candidate in used:
                         candidate = f"{arc[:-4]} ({n}).mp3"
                         n += 1
+                    try:
+                        zf.write(mp3, arcname=candidate)
+                    except Exception as exc:  # noqa: BLE001 - our side broke (disk full …): stop the ZIP
+                        failure.append(exc)
+                        return
+                    finally:
+                        shutil.rmtree(track_dir, ignore_errors=True)
                     used.add(candidate)
-                    zf.write(mp3, arcname=candidate)
                     track.update(status="done", pct=100, speed=0, eta=None)
                     self.state["ok"] = len(used)
-                except Cancelled:
-                    raise
-                except Exception as exc:  # noqa: BLE001 - skip failed tracks, keep going
-                    if self.cancelled():
-                        raise Cancelled() from exc
-                    reason = friendly_error(exc)
-                    track.update(status="error", error=reason, speed=0, eta=None)
-                    skipped.append((track["title"] or track["id"], reason))
-                    self.state["skipped"] = len(skipped)
-                finally:
-                    shutil.rmtree(track_dir, ignore_errors=True)
                 self.write(force=True)
+
+        # MP3 is already compressed, so ZIP_STORED is just as small and much faster.
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            threads = [threading.Thread(target=worker, args=(zf,), daemon=True)
+                       for _ in range(min(self.workers, len(todo)))]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            if self.cancelled():
+                raise Cancelled()
+            if failure:
+                raise failure[0]
 
             if not used:
                 detail = f" Grund: {skipped[-1][1]}" if skipped else ""
@@ -703,6 +747,10 @@ def api_jobs_create():
     if len(ids) > MAX_ZIP_TRACKS:
         return jsonify({"error": f"Maximal {MAX_ZIP_TRACKS} Titel pro ZIP."}), 400
     titles = data.get("titles") if isinstance(data.get("titles"), dict) else {}
+    try:
+        workers = int(data.get("workers") or DEFAULT_WORKERS)
+    except (TypeError, ValueError):
+        workers = DEFAULT_WORKERS
 
     sweep_jobs()
     job = Job(
@@ -710,6 +758,7 @@ def api_jobs_create():
         [(i, str(titles.get(i) or "")[:300]) for i in ids],
         clean_bitrate(data.get("bitrate")),
         str(data.get("name") or "playlist")[:200],
+        workers,
     )
     threading.Thread(target=job.run, daemon=True).start()
     return jsonify(job.state), 201

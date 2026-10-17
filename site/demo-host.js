@@ -59,7 +59,7 @@
   }
 
   // ---------- Simulated backend (same JSON shapes as app.py) ----------
-  var jobs = {}, queue = [], running = 0, seq = 0;
+  var jobs = {}, seq = 0;
   var speedUp = FILM ? 2.6 : 1;
 
   function playlist() {
@@ -77,54 +77,58 @@
     if (!ids.length) return [400, { error: 'Keine gültigen Titel ausgewählt.' }];
     var id = (++seq).toString(16).padStart(32, '0');
     var job = {
-      id: id, kind: d.zip ? 'zip' : 'mp3', name: d.name || 'playlist', status: 'queue', error: '',
+      id: id, kind: d.zip ? 'zip' : 'mp3', name: d.name || 'playlist', status: 'run', error: '',
       ok: 0, skipped: 0, file: null, download_name: null, cancelled: false,
+      workers: Math.max(1, Math.min(8, +d.workers || 4)),
       tracks: ids.map(function (vid) {
         return { id: vid, title: (d.titles || {})[vid] || vid, status: 'queue', pct: 0, speed: 0, eta: null, error: '' };
       }),
     };
     jobs[id] = job;
-    queue.push(job);
-    pump();
+    var todo = job.tracks.slice(), left = Math.min(job.workers, todo.length);
+    // Like app.py: a ZIP runs several workers, every track waits for a free slot.
+    for (var w = 0; w < left; w++) worker();
+    function worker() {
+      var t = todo.shift();
+      if (!t || job.cancelled) {
+        if (--left === 0) finishJob(job);
+        return;
+      }
+      slot(function (release) { runTrack(job, t, function () { release(); worker(); }); });
+    }
     return [201, snapshot(job)];
   }
 
-  function pump() {
-    while (running < 3 && queue.length) {
-      var job = queue.shift();
-      if (job.cancelled) continue;
-      running++;
-      job.status = 'run';
-      runTracks(job, 0, function () { running--; pump(); });
-    }
+  // Process-wide slots, like _track_slots in app.py
+  var free = 8, waiting = [];
+  function slot(fn) {
+    if (free > 0) { free--; fn(release); } else waiting.push(fn);
+    function release() { var next = waiting.shift(); if (next) next(release); else free++; }
   }
 
-  function runTracks(job, i, done) {
-    if (job.cancelled) { finishCancelled(job); return done(); }
-    if (i >= job.tracks.length) {
-      if (job.kind === 'zip' && !job.ok) { job.status = 'error'; job.error = 'Kein Titel konnte heruntergeladen werden.'; }
-      else {
-        job.status = 'done';
-        job.file = job.kind === 'zip' ? 'bundle.zip' : 'track.mp3';
-        job.download_name = job.kind === 'zip' ? job.name + '.zip' : job.tracks[0].title + '.mp3';
-      }
-      return done();
-    }
-    var t = job.tracks[i];
-    var zipFast = job.kind === 'zip' ? 1.8 : 1;
+  function finishJob(job) {
+    if (job.cancelled) return finishCancelled(job);
+    if (job.kind === 'zip' && !job.ok) { job.status = 'error'; job.error = 'Kein Titel konnte heruntergeladen werden.'; return; }
+    if (job.kind === 'mp3' && job.tracks[0].status === 'error') { job.status = 'error'; job.error = job.tracks[0].error; return; }
+    job.status = 'done';
+    job.file = job.kind === 'zip' ? 'bundle.zip' : 'track.mp3';
+    job.download_name = job.kind === 'zip' ? job.name + '.zip' : job.tracks[0].title + '.mp3';
+  }
+
+  function runTrack(job, t, done) {
+    if (job.cancelled) return done();
+    t.status = 'download';
     if (t.id === BROKEN) {
-      t.status = 'download';
       return setTimeout(function () {
         t.status = 'error'; t.error = 'Video nicht verfügbar (gelöscht, privat oder regional gesperrt).';
-        if (job.kind === 'zip') { job.skipped++; runTracks(job, i + 1, done); }
-        else { job.status = 'error'; job.error = t.error; done(); }
+        if (job.kind === 'zip') job.skipped++;
+        done();
       }, 900 / speedUp);
     }
     var total = 3e6 + Math.random() * 4e6, got = 0, base = 1.1e6 + Math.random() * 2.2e6;
-    t.status = 'download';
     var timer = setInterval(function () {
-      if (job.cancelled) { clearInterval(timer); finishCancelled(job); return done(); }
-      var sp = base * (0.75 + Math.random() * 0.5) * speedUp * zipFast;
+      if (job.cancelled) { clearInterval(timer); return done(); }
+      var sp = base * (0.75 + Math.random() * 0.5) * speedUp;
       got = Math.min(total, got + sp * 0.12);
       t.pct = Math.round(got / total * 1000) / 10;
       t.speed = sp;
@@ -133,11 +137,9 @@
         clearInterval(timer);
         t.status = 'convert'; t.pct = 100; t.speed = 0; t.eta = null;
         setTimeout(function () {
-          if (job.cancelled) { finishCancelled(job); return done(); }
-          t.status = 'done';
-          job.ok++;
-          runTracks(job, i + 1, done);
-        }, (700 + Math.random() * 400) / speedUp / zipFast);
+          if (!job.cancelled) { t.status = 'done'; job.ok++; }
+          done();
+        }, (700 + Math.random() * 400) / speedUp);
       }
     }, 120);
   }
@@ -226,7 +228,8 @@
       await sleep(1100);
       var input = document.getElementById('url');
       if (stopped) return;
-      input.focus();
+      // preventScroll: the demo must never scroll the website around it
+      input.focus({ preventScroll: true });
       for (var i = 0; i < LINK.length && !stopped; i++) {
         input.value = LINK.slice(0, i + 1);
         await sleep(18 + Math.random() * 34);
@@ -248,7 +251,12 @@
       var last = null;
       await until(function () {
         var act = document.querySelector('.trk[data-st=download],.trk[data-st=convert]');
-        if (act && act !== last) { last = act; act.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        if (act && act !== last) {
+          last = act;
+          // Scroll only inside the demo (scrollIntoView would move the website too)
+          var r = act.getBoundingClientRect();
+          window.scrollTo({ top: window.scrollY + r.top - window.innerHeight / 2, behavior: 'smooth' });
+        }
         return document.querySelector('.dock-in[data-m=zipdone]');
       }, 90000);
       await sleep(6500);

@@ -14,10 +14,12 @@ from jinja2 import Environment, FileSystemLoader
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Same values the Flask app passes in (app.py: ALLOWED_BITRATES, AUDIO_BITRATE, MAX_ZIP_TRACKS).
+# Same values the Flask app passes in (app.py: ALLOWED_BITRATES, AUDIO_BITRATE, MAX_ZIP_TRACKS, …).
 BITRATES = ["128", "192", "256", "320"]
 DEFAULT_BITRATE = "192"
 MAX_ZIP = 100
+PARALLEL_OPTIONS = [2, 4, 6, 8]  # app.py: PARALLEL_OPTIONS, DEFAULT_WORKERS
+DEFAULT_PARALLEL = 4
 
 
 def main():
@@ -39,6 +41,8 @@ def main():
         max_zip=MAX_ZIP,
         version=version,
         app_version=version,
+        parallel_options=PARALLEL_OPTIONS,
+        default_parallel=DEFAULT_PARALLEL,
     )
     scripts = ""
     for path in args.inject:

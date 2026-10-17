@@ -29,7 +29,7 @@
 </script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v={{ version }}">
 </head>
-<body class="t-std" data-bitrate="{{ default_bitrate }}" data-ffmpeg="{{ 1 if ffmpeg else 0 }}" data-maxzip="{{ max_zip }}">
+<body class="t-std" data-bitrate="{{ default_bitrate }}" data-ffmpeg="{{ 1 if ffmpeg else 0 }}" data-maxzip="{{ max_zip }}" data-parallel="{{ default_parallel }}">
 <script>document.body.className = 't-' + (document.documentElement.dataset.boot || 'std');</script>
 <div class="blobs" aria-hidden="true"><b></b><b></b><b></b></div>
 
@@ -162,6 +162,11 @@
         <div class="field"><span class="lbl">MP3-Qualität</span>
           <div class="seg q"><span class="ind" aria-hidden="true"></span>
             {% for b in bitrates %}<label><input type="radio" name="q2" data-p="bitrate" value="{{ b }}"><span>{{ b }} kbps</span></label>{% endfor %}
+          </div>
+        </div>
+        <div class="field"><span class="lbl">Gleichzeitig laden<small>Titel, die parallel laden – auch innerhalb einer ZIP</small></span>
+          <div class="seg"><span class="ind" aria-hidden="true"></span>
+            {% for n in parallel_options %}<label><input type="radio" name="par" data-p="parallel" value="{{ n }}"><span>{{ n }}</span></label>{% endfor %}
           </div>
         </div>
         <label class="tog"><span>Beim Einfügen sofort laden<small>Ein eingefügter Link wird direkt geöffnet, ohne Klick auf „Laden“</small></span><input type="checkbox" data-p="autoload"><i></i></label>
