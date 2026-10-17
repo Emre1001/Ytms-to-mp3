@@ -1,0 +1,66 @@
+# Packaging for Windows (.exe installer) and Linux (.AppImage, .deb).
+# The backend (PyInstaller) and the bundled binaries (ffmpeg, ffprobe, QuickJS)
+# are built first into ../dist/ — see .github/workflows/build.yml.
+appId: io.github.emre1001.ytmusicmp3
+productName: YT Music MP3
+copyright: MIT License · github.com/Emre1001/Ytms-to-mp3
+directories:
+  output: dist
+  buildResources: build
+files:
+  - main.js
+  - preload.js
+  - splash.html
+  - package.json
+  - build/icon.png
+extraResources:
+  - from: ../dist/ytmp3-server
+    to: backend
+  - from: ../dist/bin
+    to: bin
+asar: true
+publish: null
+# Only German and English UI strings for Chromium (saves ~40 MB).
+electronLanguages: [de, en-US]
+compression: maximum
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: YT-Music-MP3-windows-x64-Setup.${ext}
+
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: YT Music MP3
+  deleteAppDataOnUninstall: false
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icons
+  category: Audio
+  executableName: yt-music-mp3
+  syncDesktopName: true
+  synopsis: Playlists von YouTube Music als MP3 oder ZIP laden
+  description: >-
+    Link einfügen, Titel auswählen, als MP3 oder ZIP sichern – mit Titel,
+    Interpret und Cover in jeder Datei.
+  desktop:
+    entry:
+      Name: YT Music MP3
+      Comment: Playlists von YouTube Music als MP3 oder ZIP laden
+      Keywords: youtube;music;mp3;playlist;download;
+
+appImage:
+  artifactName: YT-Music-MP3-linux-x86_64.AppImage
+
+deb:
+  artifactName: YT-Music-MP3-linux-amd64.deb
+  packageName: yt-music-mp3

@@ -4,12 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="format-detection" content="telephone=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#1b1b1d">
+<meta name="theme-color" content="#0f0f10">
+<meta name="description" content="Playlists von YouTube Music als MP3 oder ZIP laden – mit Titel, Interpret und Cover.">
 <title>YT Music → MP3</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230a6cff'/%3E%3Cpath d='M10 16.5V6.5l7-1.5v9' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='8' cy='16.5' r='2' fill='white'/%3E%3Ccircle cx='15' cy='14.5' r='2' fill='white'/%3E%3C/svg%3E">
+<link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-180.png') }}">
+<link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest') }}">
+<link rel="preload" href="{{ url_for('static', filename='fonts/mona-sans.woff2') }}" as="font" type="font/woff2" crossorigin>
 <script>
 /* Vor dem ersten Zeichnen: gespeichertes Design anwenden, damit nichts aufblitzt */
 (function () {
@@ -18,6 +23,7 @@
     var dark = p.scheme === 'dark' || (p.scheme !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
     r.dataset.scheme = dark ? 'dark' : 'light';
     r.dataset.boot = ['std', 'glass', 'ascii', 'flap'].indexOf(p.theme) >= 0 ? p.theme : 'std';
+    if (window.YTHost) { r.dataset.host = YTHost.platform || 'app'; r.dataset.os = YTHost.os || ''; }
   } catch (e) {}
 })();
 </script>
@@ -33,7 +39,7 @@
 \ \ / /_   _|  \/  / __\ \|  \/  | _ \__ /
  \ V /  | | | |\/| \__ \&gt; &gt; |\/| |  _/|_ \
   |_|   |_| |_|  |_|___/_/|_|  |_|_| |___/</pre>
-    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/></svg></span>
+    <span class="mark" aria-hidden="true"><svg viewBox="96 82 320 360"><path d="M140 192v52M198 148v140M256 106v226M314 148v140M372 192v52M194 366l62 52 62-52"/></svg></span>
     <span class="logo f" data-w="12">YT Music <em>→</em> MP3</span>
   </div>
   <form id="loadf" class="add" autocomplete="off">
@@ -61,6 +67,7 @@
       <div class="hero-acts">
         <button class="primary" id="allzip" data-ic="zip" data-txt></button>
         <button id="selall" data-ic="check" data-txt></button>
+        <button id="openf" data-ic="folder" data-txt hidden title="Speicherordner öffnen"></button>
       </div>
     </div>
   </div>
@@ -160,6 +167,11 @@
         <label class="tog"><span>Beim Einfügen sofort laden<small>Ein eingefügter Link wird direkt geöffnet, ohne Klick auf „Laden“</small></span><input type="checkbox" data-p="autoload"><i></i></label>
       </section>
 
+      <section id="st-folder" hidden><h3>Speicherort</h3>
+        <div class="folder"><span data-ic="folder"></span><code id="folder"></code></div>
+        <div class="row2"><button id="chfolder" data-ic="edit" data-txt></button><button id="opfolder" data-ic="folder" data-txt></button></div>
+      </section>
+
       <section><h3>Benachrichtigungen</h3>
         <label class="tog"><span>Ton bei Fertig<small>Kurzer Klang, wenn eine ZIP oder alle MP3s fertig sind</small></span><input type="checkbox" data-p="sound"><i></i></label>
         <label class="tog"><span>Desktop-Meldung<small>Wenn das Fenster im Hintergrund liegt</small></span><input type="checkbox" data-p="notify"><i></i></label>
@@ -170,6 +182,8 @@
       </section>
 
       <section class="about"><h3>Über</h3>
+        <dl class="vers"><div><dt>App</dt><dd id="v-app">{{ app_version }}</dd></div><div><dt>yt-dlp</dt><dd id="v-ytdlp">–</dd></div></dl>
+        <div class="upd" id="upd" hidden><button id="updb" data-ic="refresh" data-txt></button><small id="updmsg"></small></div>
         <p>YT Music → MP3 · MIT-Lizenz · <a href="https://github.com/Emre1001/Ytms-to-mp3" target="_blank" rel="noopener">GitHub</a></p>
         <p><kbd>/</kbd> Link-Feld · <kbd>Strg</kbd>+<kbd>V</kbd> Link irgendwo einfügen · <kbd>Strg</kbd>+<kbd>A</kbd> alle auswählen · <kbd>Strg</kbd>+<kbd>,</kbd> Einstellungen</p>
         <p>Nur für Inhalte verwenden, an denen du die Rechte besitzt.</p>

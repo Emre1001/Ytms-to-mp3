@@ -1,0 +1,4 @@
+# Backend of the desktop app (frozen with PyInstaller).
+-r ../requirements.txt
+yt-dlp[default]
+pyinstaller==6.22.3

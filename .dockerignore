@@ -8,3 +8,12 @@ venv/
 cookies.txt
 downloads/
 .DS_Store
+android/
+desktop/
+site/
+docs/
+branding/
+packaging/
+dist/
+build/
+.github/

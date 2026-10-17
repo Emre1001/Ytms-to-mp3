@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">YT Music MP3</string>
+    <string name="share_label">Als MP3 laden</string>
+    <string name="channel_progress">Downloads</string>
+    <string name="channel_done">Fertige Downloads</string>
+</resources>

@@ -1,0 +1,23 @@
+{
+  "name": "yt-music-mp3",
+  "productName": "YT Music MP3",
+  "version": "2.0.0",
+  "description": "Playlists von YouTube Music als MP3 oder ZIP laden.",
+  "homepage": "https://github.com/Emre1001/Ytms-to-mp3",
+  "license": "MIT",
+  "author": {
+    "name": "Emre1001",
+    "email": "Emre1001@users.noreply.github.com"
+  },
+  "main": "main.js",
+  "desktopName": "yt-music-mp3.desktop",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.4.5",
+    "electron-builder": "26.15.3"
+  }
+}
