@@ -312,7 +312,7 @@ kbd{display:inline-block;padding:.12em .45em;border:1px solid var(--line2);borde
 .tile p{margin:0;max-width:440px;color:var(--muted);font-size:16px}
 .t-progress{grid-column:span 4}.t-file{grid-column:span 2}
 .t-error,.t-update,.t-size{grid-column:span 2}
-.t-keys,.t-open{grid-column:span 3;min-height:260px}
+.t-par,.t-keys,.t-open{grid-column:span 2;min-height:300px}
 @media (max-width:980px){.bento{grid-template-columns:1fr 1fr}.tile{grid-column:span 1!important}.t-progress{grid-column:span 2!important}}
 @media (max-width:640px){.bento{grid-template-columns:1fr}.tile,.t-progress{grid-column:span 1!important;min-height:0}}
 
@@ -365,6 +365,11 @@ kbd{display:inline-block;padding:.12em .45em;border:1px solid var(--line2);borde
 .t-size.in .sz i{width:var(--w)}
 .t-size.in .sz.us i{min-width:12px}
 
+.par{display:grid;gap:9px}
+.par i{position:relative;height:10px;border-radius:99px;background:var(--track);overflow:hidden}
+.par i::after{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--acc);transform:scaleX(0);transform-origin:left}
+.t-par.in .par i::after{animation:parFill var(--t) var(--ease) var(--d,0s) infinite}
+@keyframes parFill{0%{transform:scaleX(0);background:var(--acc)}78%{transform:scaleX(1);background:var(--acc)}84%,96%{transform:scaleX(1);background:var(--ok)}100%{transform:scaleX(1);background:var(--ok);opacity:0}}
 .keys{display:flex;align-items:center;gap:12px;font:600 22px/1 var(--mono);color:var(--muted)}
 .keys kbd{display:grid;place-items:center;min-width:64px;height:64px;padding:0 16px;border-radius:14px;border-bottom-width:4px;font-size:20px;color:var(--fg);transition:transform .15s,border-bottom-width .15s}
 .t-keys.in .k1{animation:press 2.8s infinite}

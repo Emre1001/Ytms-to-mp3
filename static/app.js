@@ -8,12 +8,15 @@ const host = window.YTHost || null;
 const mqDark = matchMedia('(prefers-color-scheme: dark)');
 const mqMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const MAX_ZIP = +body.dataset.maxzip || 100;
-const P_DEFAULT = { theme: 'std', scheme: 'system', accent: 'auto', motion: 'auto', compact: false, bitrate: body.dataset.bitrate || '192', autoload: true, sound: true, notify: false };
+const P_DEFAULT = { theme: 'std', scheme: 'system', accent: 'auto', motion: 'auto', compact: false, bitrate: body.dataset.bitrate || '192', parallel: body.dataset.parallel || '4', autoload: true, sound: true, notify: false };
 const store = {
   get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 let prefs = { ...P_DEFAULT, ...store.get('ytmp3.prefs', {}) };
+// Gespeicherter Wert passt nicht mehr zu den Optionen dieses Servers? Dann Standard.
+if (!document.querySelector(`input[data-p=parallel][value="${prefs.parallel}"]`)) prefs.parallel = P_DEFAULT.parallel;
+const parallel = () => Math.max(1, +prefs.parallel || 4);
 let theme = '';
 let pl = null;            // geladene Playlist
 let filter = 'all', query = '';
@@ -264,6 +267,7 @@ async function loadPlaylist(raw) {
     root.classList.remove('loading');
     lb.disabled = false;
     btn(lb, 'load', LONG.load);
+    meta();
   }
 }
 
@@ -570,9 +574,11 @@ function renderZip() {
     return;
   }
   const finished = s.tracks.filter(t => t.status === 'done' || t.status === 'error').length;
-  const cur = s.tracks.find(t => t.status === 'download' || t.status === 'convert');
-  $('#zhead').textContent = s.status === 'queue' ? 'ZIP wartet…' : `ZIP · Titel ${Math.min(finished + 1, total)} von ${total}`;
-  $('#zsub').textContent = [cur ? cur.title + (cur.status === 'convert' ? ' · wird umgewandelt' : '') : 'Gleich geht’s los…', s.skipped ? `${s.skipped} übersprungen` : ''].filter(Boolean).join(' · ');
+  const act = s.tracks.filter(t => t.status === 'download' || t.status === 'convert');
+  $('#zhead').textContent = s.status === 'queue' ? 'ZIP wartet…' : `ZIP · ${finished} von ${total} fertig`;
+  const now = act.length > 1 ? `${act.length} gleichzeitig: ${act.map(t => t.title).join(', ')}`
+    : act.length ? act[0].title + (act[0].status === 'convert' ? ' · wird umgewandelt' : '') : 'Gleich geht’s los…';
+  $('#zsub').textContent = [now, s.skipped ? `${s.skipped} übersprungen` : ''].filter(Boolean).join(' · ');
   document.title = `${Math.floor(zip.shown)} % · YT Music → MP3`;
 }
 
@@ -668,7 +674,7 @@ function remember(p) {
 }
 
 // ---------- Downloads ----------
-// Einzel-MP3s: höchstens drei Aufträge gleichzeitig, der Rest wartet hier
+// Einzel-MP3s: so viele Aufträge gleichzeitig wie eingestellt, der Rest wartet hier
 const pending = [];
 let inflight = 0;
 const mp3Jobs = () => [...jobs.values()].filter(j => j.kind === 'mp3').length;
@@ -686,7 +692,7 @@ function startMp3(r) {
 }
 
 function pump() {
-  while (pending.length && mp3Jobs() + inflight < 3) {
+  while (pending.length && mp3Jobs() + inflight < parallel()) {
     const r = pending.shift();
     if (r.st.status !== 'queue' || r.job || r.launching || rows.get(r.id) !== r) continue;
     inflight++;
@@ -716,7 +722,7 @@ async function startZip(list) {
   const titles = {};
   list.forEach(r => { titles[r.id] = r.t.title; });
   try {
-    const s = await api('/api/jobs', { ids: list.map(r => r.id), titles, zip: true, name: pl.title, bitrate: prefs.bitrate });
+    const s = await api('/api/jobs', { ids: list.map(r => r.id), titles, zip: true, name: pl.title, bitrate: prefs.bitrate, workers: parallel() });
     zip = { id: s.id, ids: list.map(r => r.id), state: s, shown: 0 };
     jobs.set(s.id, { kind: 'zip', ids: zip.ids });
     list.forEach(r => {

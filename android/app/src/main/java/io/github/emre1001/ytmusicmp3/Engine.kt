@@ -5,12 +5,16 @@ import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLException
 import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import org.json.JSONArray
 import org.json.JSONObject
@@ -32,7 +36,10 @@ private class Cancelled : Exception()
  * yt-dlp, ffmpeg and QuickJS come from youtubedl-android.
  */
 object Engine {
-    private const val MAX_PARALLEL = 3
+    // Tracks that download at once across all jobs; a ZIP runs several of its
+    // tracks in parallel too (the "workers" the page asks for, 4 by default).
+    private const val MAX_PARALLEL = 8
+    private const val DEFAULT_WORKERS = 4
     private const val MAX_ZIP_TRACKS = 100
     private const val JOB_TTL_MS = 30 * 60 * 1000L
     private val BITRATES = setOf("128", "192", "256", "320")
@@ -163,6 +170,7 @@ object Engine {
             name = data.optString("name").ifBlank { "playlist" }.take(200),
             bitrate = bitrate,
             tracks = ids.map { Track(it, str(titles, it).take(300)) },
+            workers = data.optInt("workers", DEFAULT_WORKERS).coerceIn(1, MAX_PARALLEL),
         )
         jobs[job.id] = job
         scope.launch { run(job) }
@@ -171,7 +179,7 @@ object Engine {
 
     private fun cancel(job: Job) {
         job.cancelled = true
-        job.pid?.let { YoutubeDL.getInstance().destroyProcessById(it) }
+        job.pids.forEach { YoutubeDL.getInstance().destroyProcessById(it) }
     }
 
     private suspend fun info(): JSONObject {
@@ -217,12 +225,10 @@ object Engine {
 
     private suspend fun run(job: Job) {
         try {
-            slots.withPermit {
-                if (job.cancelled) throw Cancelled()
-                job.status = "run"
-                awaitReady()
-                if (job.kind == "zip") runZip(job) else runMp3(job)
-            }
+            if (job.cancelled) throw Cancelled()
+            job.status = "run"
+            awaitReady()
+            if (job.kind == "zip") runZip(job) else runMp3(job)
             // Save right away so finished files land in the music folder even
             // while the app sits in the background.
             try { save(job.id) } catch (_: Exception) {}
@@ -246,10 +252,10 @@ object Engine {
         }
     }
 
-    private fun runMp3(job: Job) {
+    private suspend fun runMp3(job: Job) {
         val t = job.tracks[0]
         val mp3 = try {
-            fetch(job, t, File(job.dir, "t"))
+            slots.withPermit { fetch(job, t, File(job.dir, "t")) }
         } catch (e: Cancelled) {
             throw e
         } catch (e: Exception) {
@@ -264,39 +270,62 @@ object Engine {
         job.status = "done"
     }
 
-    private fun runZip(job: Job) {
+    private suspend fun runZip(job: Job) {
         val zipFile = File(job.dir, "bundle.zip")
         val used = mutableSetOf<String>()
         val skipped = mutableListOf<Pair<String, String>>()
+        val todo = ArrayDeque(job.tracks.withIndex().toList())
+        val lock = Mutex()
         ZipOutputStream(zipFile.outputStream().buffered()).use { zip ->
             // MP3s are already compressed.
             zip.setLevel(Deflater.NO_COMPRESSION)
-            for ((i, t) in job.tracks.withIndex()) {
-                if (job.cancelled) throw Cancelled()
-                val dir = File(job.dir, "t$i")
-                try {
-                    val mp3 = fetch(job, t, dir)
-                    val base = safeName(mp3.nameWithoutExtension)
-                    var name = "$base.mp3"
-                    var n = 2
-                    while (name in used) name = "$base (${n++}).mp3"
-                    used += name
-                    zip.putNextEntry(ZipEntry(name))
-                    mp3.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                    t.finish()
-                    job.ok = used.size
-                } catch (e: Cancelled) {
-                    throw e
-                } catch (e: Exception) {
-                    if (job.cancelled) throw Cancelled()
-                    t.fail(friendly(e.message))
-                    skipped += t.title.ifEmpty { t.id } to t.error
-                    job.skipped = skipped.size
-                } finally {
-                    dir.deleteRecursively()
+            coroutineScope {
+                repeat(minOf(job.workers, job.tracks.size)) {
+                    launch {
+                        while (true) {
+                            val next = lock.withLock { if (job.cancelled) null else todo.removeFirstOrNull() } ?: break
+                            val (i, t) = next
+                            val dir = File(job.dir, "t$i")
+                            val mp3 = try {
+                                slots.withPermit { fetch(job, t, dir) }
+                            } catch (e: Cancelled) {
+                                dir.deleteRecursively()
+                                break
+                            } catch (e: CancellationException) {
+                                dir.deleteRecursively()
+                                throw e
+                            } catch (e: Exception) {
+                                dir.deleteRecursively()
+                                if (job.cancelled) break
+                                lock.withLock {
+                                    t.fail(friendly(e.message))
+                                    skipped += t.title.ifEmpty { t.id } to t.error
+                                    job.skipped = skipped.size
+                                }
+                                continue
+                            }
+                            try {
+                                // One writer at a time; a failure here (disk full …) ends the ZIP.
+                                lock.withLock {
+                                    val base = safeName(mp3.nameWithoutExtension)
+                                    var name = "$base.mp3"
+                                    var n = 2
+                                    while (name in used) name = "$base (${n++}).mp3"
+                                    used += name
+                                    zip.putNextEntry(ZipEntry(name))
+                                    mp3.inputStream().use { it.copyTo(zip) }
+                                    zip.closeEntry()
+                                    t.finish()
+                                    job.ok = used.size
+                                }
+                            } finally {
+                                dir.deleteRecursively()
+                            }
+                        }
+                    }
                 }
             }
+            if (job.cancelled) throw Cancelled()
             if (used.isEmpty()) {
                 val detail = skipped.lastOrNull()?.let { " Grund: ${it.second}" } ?: ""
                 throw ApiError(502, "Kein Titel konnte heruntergeladen werden.$detail")
@@ -338,12 +367,13 @@ object Engine {
             addOption("--parse-metadata", ":(?P<meta_synopsis>)")
             addOption("--cache-dir", cacheDir.absolutePath)
         }
+        if (job.cancelled) throw Cancelled()
         val pid = "${job.id}-${t.id}"
-        job.pid = pid
+        job.pids += pid
         t.status = "download"
         t.pct = 0.0
         try {
-            YoutubeDL.getInstance().execute(req, pid) { progress, eta, line -> onLine(job, t, progress, eta, line) }
+            YoutubeDL.getInstance().execute(req, pid) { progress, eta, line -> onLine(job, t, pid, progress, eta, line) }
         } catch (e: YoutubeDL.CanceledException) {
             throw Cancelled()
         } catch (e: YoutubeDLException) {
@@ -351,7 +381,7 @@ object Engine {
             // Cover or tags failed, but the MP3 itself is usually there — keep it.
             newestMp3(dir) ?: throw e
         } finally {
-            job.pid = null
+            job.pids -= pid
         }
         if (job.cancelled) throw Cancelled()
         return newestMp3(dir) ?: throw IOException("Konvertierung lieferte keine MP3-Datei.")
@@ -360,9 +390,9 @@ object Engine {
     private fun newestMp3(dir: File) =
         dir.listFiles()?.filter { it.extension.equals("mp3", true) }?.maxByOrNull { it.lastModified() }
 
-    private fun onLine(job: Job, t: Track, progress: Float, eta: Long, line: String) {
+    private fun onLine(job: Job, t: Track, pid: String, progress: Float, eta: Long, line: String) {
         if (job.cancelled) {
-            job.pid?.let { YoutubeDL.getInstance().destroyProcessById(it) }
+            YoutubeDL.getInstance().destroyProcessById(pid)
             return
         }
         when {
@@ -459,7 +489,14 @@ object Engine {
             .put("speed", speed).put("eta", eta ?: JSONObject.NULL).put("error", error)
     }
 
-    class Job(val id: String, val kind: String, val name: String, val bitrate: String, val tracks: List<Track>) {
+    class Job(
+        val id: String,
+        val kind: String,
+        val name: String,
+        val bitrate: String,
+        val tracks: List<Track>,
+        val workers: Int,
+    ) {
         val dir = File(app.cacheDir, "jobs/$id").apply { mkdirs() }
         @Volatile var status = "queue"
         @Volatile var error = ""
@@ -468,7 +505,7 @@ object Engine {
         @Volatile var file: File? = null
         @Volatile var downloadName: String? = null
         @Volatile var cancelled = false
-        @Volatile var pid: String? = null
+        val pids: MutableSet<String> = ConcurrentHashMap.newKeySet()
         @Volatile var saved: JSONObject? = null
         @Volatile var finishedAt = 0L
 
