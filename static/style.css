@@ -465,7 +465,7 @@ main:empty{display:none}
 html[data-host=desktop] .top{-webkit-app-region:drag}
 html[data-host=desktop] .top :is(button,input,form,.brand,a,label,pre){-webkit-app-region:no-drag}
 html[data-host=desktop] .top{user-select:none}
-html[data-host=desktop][data-os=win32]{--wco:calc(100vw - env(titlebar-area-x,0px) - env(titlebar-area-width,100vw))}
+html[data-host=desktop][data-os=win32]{--wco:calc(100vw - env(titlebar-area-x,0px) - env(titlebar-area-width,calc(100vw - 140px)))}
 html[data-host=desktop][data-os=win32] .top{padding-right:calc(var(--wco) + 14px);min-height:52px}
 html[data-host=desktop][data-os=win32] .dr-head{padding-right:calc(var(--wco) + 14px);min-height:52px;-webkit-app-region:drag}
 html[data-host=desktop][data-os=win32] .dr-head button{-webkit-app-region:no-drag}
