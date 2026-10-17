@@ -144,12 +144,18 @@ function registerProtocol() {
   protocol.handle(SCHEME, async req => {
     if (!base) return new Response('Startet…', { status: 503 });
     const u = new URL(req.url);
-    const headers = new Headers(req.headers);
-    headers.set('X-YTMP3-Token', token);
+    // Only pass on what the backend needs (browser-managed headers like Origin
+    // or Sec-Fetch-* make the inner request fail).
+    const headers = new Headers({ 'X-YTMP3-Token': token });
+    for (const h of ['content-type', 'accept', 'range', 'if-none-match', 'if-modified-since']) {
+      const v = req.headers.get(h);
+      if (v) headers.set(h, v);
+    }
     const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.arrayBuffer();
     try {
       return await net.fetch(base + u.pathname + u.search, { method: req.method, headers, body });
-    } catch {
+    } catch (e) {
+      if (dev) console.error('proxy', req.url, e);
       return new Response(JSON.stringify({ error: 'Keine Verbindung zum Hintergrunddienst.' }), {
         status: 502, headers: { 'Content-Type': 'application/json' },
       });
