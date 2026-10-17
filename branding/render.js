@@ -48,6 +48,12 @@ function ico(pngs) {
     const png = await render(s, Math.round(s * 0.04));
     fs.writeFileSync(out(`android/app/src/main/res/mipmap-${d}/ic_launcher.png`), png);
   }
+  // Social preview for the website (Open Graph)
+  await page.setViewportSize({ width: 1200, height: 630 });
+  await page.goto('file://' + path.join(__dirname, 'og.html'));
+  await page.waitForTimeout(300);
+  fs.writeFileSync(out('site/assets/og.png'), await page.screenshot());
+
   await browser.close();
   console.log('icons written');
 })();

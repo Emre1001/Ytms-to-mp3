@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>YT Music → MP3 · Aus Playlists werden MP3s</title>
+<meta name="description" content="Kostenlose App für Windows, Linux und Android: Playlist-Link aus YouTube Music einfügen, auswählen, als MP3 oder ZIP laden – mit Titel, Interpret und Cover in jeder Datei. Open Source.">
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f5f4f1" media="(prefers-color-scheme: light)">
+<meta property="og:title" content="YT Music → MP3">
+<meta property="og:description" content="Aus Playlists werden MP3s. Für Windows, Linux und Android – kostenlos und Open Source.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://emre1001.github.io/Ytms-to-mp3/assets/og.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="assets/icons/icon-180.png">
+<link rel="preload" href="assets/mona-sans.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  // Farbschema vor dem ersten Zeichnen setzen
+  try {
+    var s = localStorage.getItem('site.scheme');
+    if (s === 'light' || s === 'dark') document.documentElement.dataset.scheme = s;
+  } catch (e) {}
+</script>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt</a>
+
+<header class="nav" id="nav">
+  <div class="nav-in">
+    <a class="brand" href="#top" aria-label="YT Music → MP3, nach oben">
+      <span class="mark"><svg viewBox="96 82 320 360" aria-hidden="true"><path d="M140 192v52M198 148v140M256 106v226M314 148v140M372 192v52M194 366l62 52 62-52"/></svg></span>
+      <span class="word">YT Music <em>→</em> MP3</span>
+    </a>
+    <nav class="links" aria-label="Abschnitte">
+      <a href="#ablauf">So geht’s</a>
+      <a href="#warum">Warum</a>
+      <a href="#designs">Designs</a>
+      <a href="#faq">Fragen</a>
+    </nav>
+    <div class="nav-end">
+      <button class="iconbtn" id="scheme" type="button" aria-label="Hell/Dunkel umschalten">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="sun" cx="12" cy="12" r="4.2"/><path class="rays" d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4"/><path class="moon" d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+      </button>
+      <a class="btn primary small" href="#download">Laden</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============ Hero ============ -->
+<section class="hero" id="top" data-p>
+  <div class="wrap">
+    <p class="pill intro" style="--i:0"><span class="dot"></span>Jetzt als App für Windows, Linux und Android</p>
+    <h1 class="h-hero" aria-label="Aus Playlists werden MP3s.">
+      <span class="line"><span class="w intro" style="--i:1">Aus</span> <span class="w intro" style="--i:2">Playlists</span></span>
+      <span class="line"><span class="w intro" style="--i:3">werden</span> <span class="w intro acc" style="--i:4">MP3s.</span></span>
+    </h1>
+    <p class="lede intro" style="--i:5">Link aus YouTube Music einfügen, Titel auswählen, fertig. Jede Datei kommt mit Titel, Interpret und Cover – einzeln oder alle zusammen als ZIP.</p>
+    <div class="cta intro" style="--i:6">
+      <a class="btn primary big" id="cta-main" href="#download">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19.5h14"/></svg>
+        <span>Kostenlos laden</span>
+      </a>
+      <a class="btn ghost big" href="#designs">Live ausprobieren</a>
+    </div>
+    <p class="fine intro" style="--i:7"><span id="ver">Version 2.0</span> · Windows 10/11 · Linux · Android 10+ · Open Source (MIT)</p>
+  </div>
+
+  <div class="stage-hero">
+    <figure class="window" id="hero-window">
+      <div class="chrome">
+        <span class="title" aria-hidden="true">YT Music MP3</span>
+        <span class="live" id="film-note"><span class="rec"></span><span class="lt">Die echte App mit Beispielmusik – klick rein</span></span>
+        <span class="wctl" aria-hidden="true"><i></i><i></i><i></i></span>
+      </div>
+      <div class="screen">
+        <iframe id="film" title="Die App in Aktion (Demo mit Beispielmusik)" data-src="app/?film=1"></iframe>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Facts ============ -->
+<section class="facts" aria-label="Zahlen">
+  <div class="wrap facts-row">
+    <div class="fact rv"><b><span class="count" data-to="320">0</span><small>kbps</small></b><span>höchste MP3-Qualität</span></div>
+    <div class="fact rv"><b><span class="count" data-to="100">0</span></b><span>Titel pro ZIP</span></div>
+    <div class="fact rv"><b><span class="count" data-to="3">0</span></b><span>Downloads gleichzeitig</span></div>
+    <div class="fact rv"><b><span class="count" data-to="0">0</span></b><span>Konten, Werbung, Tracker</span></div>
+  </div>
+</section>
+
+<!-- ============ So funktioniert's ============ -->
+<section class="story" id="ablauf" data-p data-pin>
+  <div class="pin">
+    <div class="wrap story-grid">
+      <div class="story-text">
+        <p class="eyebrow">So funktioniert’s</p>
+        <ol class="steps" id="steps">
+          <li class="step" data-n="0">
+            <span class="num">01</span>
+            <h3>Link rein.</h3>
+            <p>Du kopierst in YouTube Music einen Link – Playlist, Album, Mix oder ein einzelner Song – und fügst ihn ein. Mit <kbd>Strg</kbd>+<kbd>V</kbd> irgendwo im Fenster, per Ziehen, oder auf dem Handy direkt über <em>Teilen</em>.</p>
+          </li>
+          <li class="step" data-n="1">
+            <span class="num">02</span>
+            <h3>Erst die Liste.</h3>
+            <p>Die App liest mit <code>yt-dlp</code> nur das Inhaltsverzeichnis: Titel, Interpret, Dauer, Cover. Kein einziger Song wird dafür geladen – darum steht auch eine Playlist mit 100 Titeln nach Sekunden da.</p>
+          </li>
+          <li class="step" data-n="2">
+            <span class="num">03</span>
+            <h3>Nur der Ton.</h3>
+            <p>Für jeden ausgewählten Titel wird die beste Tonspur geholt, die YouTube anbietet – meist Opus, sonst AAC. Kein Video, kein Umweg über fremde Server. Drei Titel laufen gleichzeitig, mit echtem Fortschritt.</p>
+          </li>
+          <li class="step" data-n="3">
+            <span class="num">04</span>
+            <h3>Fertig als MP3.</h3>
+            <p><code>ffmpeg</code> wandelt in MP3 um – mit 128 bis 320 kbps, wie du willst – und schreibt Titel, Interpret und Album hinein. Das Cover wird aufs Quadrat zugeschnitten, so wie es in jeder Musik-App aussehen soll.</p>
+          </li>
+          <li class="step" data-n="4">
+            <span class="num">05</span>
+            <h3>Alles in eine ZIP.</h3>
+            <p>Wählst du mehrere Titel, landen sie in einer einzigen Datei. Ist ein Song gesperrt oder gelöscht, läuft die ZIP trotzdem durch – und eine kleine Textdatei sagt dir, welcher fehlt und warum.</p>
+          </li>
+        </ol>
+      </div>
+
+      <div class="story-stage" id="stage" aria-hidden="true">
+        <div class="rail"><i></i><i></i><i></i><i></i><i></i><span class="fill"></span></div>
+
+        <!-- 1: Link -->
+        <div class="scene s0">
+          <div class="urlbar"><svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span class="u"><span class="seg a">music.youtube.com</span><span class="seg b">/playlist?list=</span><span class="seg c">PLroadtrip-sommer</span></span></div>
+          <div class="tags"><span class="t a">YouTube Music</span><span class="t b">Playlist</span><span class="t c">ID erkannt</span></div>
+          <div class="kinds"><span>Playlist</span><span>Album</span><span>Mix</span><span>Einzelner Titel</span><span>youtu.be</span></div>
+        </div>
+
+        <!-- 2: Liste -->
+        <div class="scene s1">
+          <pre class="json"><code><span>{ "title": "Nachtfahrt",</span><span>  "artist": "Lina Sommer",</span><span>  "duration": 214 },</span><span>{ "title": "Glas &amp; Beton",</span><span>  "artist": "Kollektiv Nord", … }</span></code></pre>
+          <div class="rows">
+            <div class="mrow"><i class="ck"></i><i class="cv c1"></i><b>Nachtfahrt<small>Lina Sommer · 3:34</small></b></div>
+            <div class="mrow"><i class="ck"></i><i class="cv c2"></i><b>Glas &amp; Beton<small>Kollektiv Nord · 3:07</small></b></div>
+            <div class="mrow"><i class="ck"></i><i class="cv c3"></i><b>Halbmond über Köln<small>Mira Vale · 4:03</small></b></div>
+            <div class="mrow"><i class="ck"></i><i class="cv c4"></i><b>Leuchtfeuer<small>Ostwind · 3:21</small></b></div>
+          </div>
+          <p class="meter"><span>0 MB</span> geladen · Liste in <span>0,8 s</span></p>
+        </div>
+
+        <!-- 3: Laden -->
+        <div class="scene s2">
+          <div class="lanes">
+            <div class="lane"><span class="lbl">Nachtfahrt</span><span class="bars"></span><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/><circle class="v" cx="18" cy="18" r="15" pathLength="100"/></svg><span class="spd">2,4 MB/s</span></div>
+            <div class="lane"><span class="lbl">Glas &amp; Beton</span><span class="bars"></span><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/><circle class="v" cx="18" cy="18" r="15" pathLength="100"/></svg><span class="spd">1,8 MB/s</span></div>
+            <div class="lane"><span class="lbl">Halbmond über Köln</span><span class="bars"></span><svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15"/><circle class="v" cx="18" cy="18" r="15" pathLength="100"/></svg><span class="spd">3,1 MB/s</span></div>
+          </div>
+          <p class="meter">bestaudio · <b>Opus</b> · 3 gleichzeitig</p>
+        </div>
+
+        <!-- 4: Umwandeln -->
+        <div class="scene s3">
+          <div class="chain">
+            <span class="node">.webm<small>Opus</small></span>
+            <span class="wire"><i></i></span>
+            <span class="node core">ffmpeg<small>LAME</small></span>
+            <span class="wire"><i></i></span>
+            <span class="node out">.mp3<small>192 kbps</small></span>
+          </div>
+          <div class="file">
+            <div class="art"><span class="wide"></span></div>
+            <dl>
+              <div><dt>Titel</dt><dd>Nachtfahrt</dd></div>
+              <div><dt>Interpret</dt><dd>Lina Sommer</dd></div>
+              <div><dt>Album</dt><dd>Roadtrip</dd></div>
+              <div><dt>Datei</dt><dd>Lina Sommer - Nachtfahrt.mp3</dd></div>
+            </dl>
+          </div>
+          <div class="kbps"><span>128</span><span class="on">192</span><span>256</span><span>320</span></div>
+        </div>
+
+        <!-- 5: ZIP -->
+        <div class="scene s4">
+          <div class="cards">
+            <span class="fc">Nachtfahrt.mp3</span><span class="fc">Glas &amp; Beton.mp3</span><span class="fc">Leuchtfeuer.mp3</span>
+            <span class="fc bad">Funkstille.mp3</span><span class="fc">Strom.mp3</span>
+          </div>
+          <div class="zip"><svg viewBox="0 0 64 64"><path d="M14 8h26l12 12v36H14z"/><path d="M40 8v12h12"/><path d="M28 14h4M28 20h4M28 26h4M28 32h4"/><rect x="26" y="38" width="8" height="8" rx="2"/></svg><b>Roadtrip Sommer.zip</b><small>11 Titel · 1 übersprungen</small></div>
+          <div class="note"><b>_Übersprungene Titel.txt</b><small>– Funkstille<br>  Grund: Video nicht verfügbar (privat)</small></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Warum ============ -->
+<section class="why" id="warum">
+  <div class="wrap">
+    <p class="statement" data-p data-words>Kein Konto. Keine Werbung. Kein Tracking. Die App läuft auf deinem Gerät und spricht nur mit YouTube – sonst mit niemandem.</p>
+
+    <div class="bento">
+      <article class="tile t-progress rv">
+        <div class="tile-txt"><h3>Ehrlicher Fortschritt.</h3><p>Prozent, Tempo und Restzeit kommen direkt vom Download – nicht geschätzt, nicht geschönt. Ein Tipp auf den Ring bricht ab.</p></div>
+        <div class="demo-row" aria-hidden="true">
+          <i class="ck on"></i><i class="cv c1"></i>
+          <div class="dr-body"><b>Nachtfahrt</b><small>Lina Sommer · 3:34</small><span class="bar"><i></i></span><span class="stats"><b class="pct">0,0 %</b><span class="sp">2,1 MB/s</span><span class="eta">noch 00:05</span></span></div>
+          <svg class="ring" viewBox="0 0 32 32"><circle cx="16" cy="16" r="13.5"/><circle class="v" cx="16" cy="16" r="13.5" pathLength="100"/><rect x="12" y="12" width="8" height="8" rx="2"/></svg>
+        </div>
+      </article>
+
+      <article class="tile t-file rv">
+        <div class="tile-txt"><h3>Bereit für deine Sammlung.</h3><p>„Interpret - Titel.mp3“, dazu Tags und ein quadratisches Cover. Sieht in jeder Musik-App aus wie gekauft.</p></div>
+        <div class="finder" aria-hidden="true">
+          <div><i class="cv c1"></i><b>Lina Sommer - Nachtfahrt.mp3</b><small>4,9 MB</small></div>
+          <div><i class="cv c2"></i><b>Kollektiv Nord - Glas &amp; Beton.mp3</b><small>4,3 MB</small></div>
+          <div><i class="cv c3"></i><b>Mira Vale - Halbmond über Köln.mp3</b><small>5,6 MB</small></div>
+        </div>
+      </article>
+
+      <article class="tile t-error rv">
+        <div class="tile-txt"><h3>Fehler mit Erklärung.</h3><p>Gesperrt, privat, gelöscht? Du liest es auf Deutsch – und der Rest läuft einfach weiter.</p></div>
+        <div class="errrow" aria-hidden="true"><b>Funkstille <span class="chip">Fehler</span></b><small>Video nicht verfügbar (gelöscht, privat oder regional gesperrt).</small><span class="retry"><svg viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v4h4"/></svg></span></div>
+      </article>
+
+      <article class="tile t-update rv">
+        <div class="tile-txt"><h3>Bleibt von selbst aktuell.</h3><p>YouTube ändert ständig etwas. Die App holt sich einmal am Tag das neueste <code>yt-dlp</code> – geprüft, im Hintergrund.</p></div>
+        <div class="flip" aria-hidden="true"><span class="lbl">yt-dlp</span><span class="digits" data-a="2026.08.19" data-b="2026.10.14"></span></div>
+      </article>
+
+      <article class="tile t-size rv">
+        <div class="tile-txt"><h3>Schlank gebaut.</h3><p>Statt eines kompletten ffmpeg mit Video, Filtern und Codecs, die niemand braucht, steckt nur das Nötige drin.</p></div>
+        <div class="sizes" aria-hidden="true">
+          <div class="sz"><span>ffmpeg komplett</span><i style="--w:100%"></i><b>≈ 150 MB</b></div>
+          <div class="sz us"><span>ffmpeg in der App</span><i style="--w:3.4%"></i><b>≈ 5 MB</b></div>
+        </div>
+      </article>
+
+      <article class="tile t-keys rv">
+        <div class="tile-txt"><h3>Schnell bedient.</h3><p>Link irgendwo einfügen, mit <kbd>Shift</kbd> ganze Bereiche wählen, Links ins Fenster ziehen. Auf dem Handy: Teilen → YT Music MP3.</p></div>
+        <div class="keys" aria-hidden="true"><kbd class="k1">Strg</kbd><span>+</span><kbd class="k2">V</kbd></div>
+      </article>
+
+      <article class="tile t-open rv">
+        <div class="tile-txt"><h3>Offen bis zur letzten Zeile.</h3><p>MIT-Lizenz. Jede Zeile Code liegt auf GitHub, jede Version wird dort öffentlich gebaut.</p></div>
+        <a class="gh" href="https://github.com/Emre1001/Ytms-to-mp3" target="_blank" rel="noopener">github.com/Emre1001/Ytms-to-mp3 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></a>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Designs / Live-Demo ============ -->
+<section class="designs" id="designs">
+  <div class="wrap">
+    <p class="eyebrow rv">Live ausprobieren</p>
+    <h2 class="h2 rv">Vier Gesichter.<br><span class="muted">Eine App.</span></h2>
+    <p class="sub rv">Das hier ist die echte Oberfläche, nur mit Beispielmusik. Klick dich durch, lade Titel, wechsle das Design – die App zeigt dir, wie sie aussieht, bevor du sie installierst.</p>
+    <div class="switch rv" role="radiogroup" aria-label="Design der Demo">
+      <span class="ind" aria-hidden="true"></span>
+      <button role="radio" aria-checked="true" data-theme="std"><i class="sw sw-std"></i>Standard</button>
+      <button role="radio" aria-checked="false" data-theme="glass"><i class="sw sw-glass"></i>Glas</button>
+      <button role="radio" aria-checked="false" data-theme="ascii"><i class="sw sw-ascii"></i>ASCII</button>
+      <button role="radio" aria-checked="false" data-theme="flap"><i class="sw sw-flap"></i>Split-Flap</button>
+    </div>
+  </div>
+  <div class="wrap">
+    <figure class="window demo rv">
+      <div class="chrome" aria-hidden="true"><span class="title">YT Music MP3 · Demo</span><span class="wctl"><i></i><i></i><i></i></span></div>
+      <div class="screen"><iframe id="demo" title="Interaktive Demo der App" data-src="app/?start=list"></iframe></div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============ Überall ============ -->
+<section class="everywhere">
+  <div class="wrap ew-grid">
+    <div class="ew-text">
+      <p class="eyebrow rv">Desktop und Handy</p>
+      <h2 class="h2 rv">Überall zu Hause.</h2>
+      <ul class="ew-list">
+        <li class="rv"><b>Windows &amp; Linux</b><span>Installieren, starten, fertig. Python, ffmpeg und alles andere sind eingebaut. Dateien landen in <code>Downloads/YT Music MP3</code> – den Ordner kannst du ändern. Fortschritt auch in der Taskleiste.</span></li>
+        <li class="rv"><b>Android</b><span>In YouTube Music auf <em>Teilen</em> tippen, <em>YT Music MP3</em> wählen – die Playlist ist offen. MP3s landen in <code>Musik/YT Music MP3</code> und sind sofort im Player.</span></li>
+        <li class="rv"><b>Im Hintergrund</b><span>Eine Benachrichtigung zeigt den Fortschritt, die Downloads laufen weiter, auch wenn du die App verlässt.</span></li>
+        <li class="rv"><b>Selbst hosten</b><span>Lieber im Browser? Mit Docker oder Render läuft dieselbe App als Website – für alle Geräte im WLAN.</span></li>
+      </ul>
+    </div>
+    <div class="phone rv" aria-hidden="true">
+      <div class="phone-in">
+        <iframe id="phone" title="Die App auf dem Handy" data-src="app/?start=list&amp;scheme=dark" tabindex="-1"></iframe>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ Download ============ -->
+<section class="download" id="download">
+  <div class="wrap">
+    <p class="eyebrow rv">Download</p>
+    <h2 class="h2 rv">Hol sie dir.</h2>
+    <p class="sub rv">Kostenlos, ohne Anmeldung, ohne Haken. <span id="rel-info"></span></p>
+
+    <div class="dl-grid">
+      <article class="dl rv" data-os="windows">
+        <div class="dl-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="12" rx="2"/><path d="M8 20h8M12 16.5V20"/></svg><h3>Windows</h3><span class="req">10 und 11 · 64-Bit</span></div>
+        <a class="btn primary" data-file="YT-Music-MP3-windows-x64-Setup.exe" href="#">Installer laden<small>.exe</small></a>
+        <details><summary>So geht’s</summary><ol><li>Datei öffnen – die App installiert sich und startet.</li><li>Erscheint „Der Computer wurde durch Windows geschützt“: <b>Weitere Informationen → Trotzdem ausführen</b>. Die Meldung kommt, weil die App nicht kostenpflichtig signiert ist.</li></ol></details>
+      </article>
+
+      <article class="dl rv" data-os="android">
+        <div class="dl-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="2.5" width="11" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></svg><h3>Android</h3><span class="req">Android 10 oder neuer</span></div>
+        <a class="btn primary" data-file="YT-Music-MP3-android-arm64.apk" href="#">APK laden<small>arm64</small></a>
+        <p class="alt">Ältere 32-Bit-Handys: <a data-file="YT-Music-MP3-android-armv7.apk" href="#">armv7</a> · Emulator/Chromebook: <a data-file="YT-Music-MP3-android-x86_64.apk" href="#">x86_64</a></p>
+        <details><summary>So geht’s</summary><ol><li>APK öffnen und installieren. Beim ersten Mal fragt Android, ob dein Browser Apps installieren darf – einmal erlauben.</li><li>In YouTube Music: <b>Teilen → YT Music MP3</b>.</li></ol></details>
+      </article>
+
+      <article class="dl rv" data-os="linux">
+        <div class="dl-head"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15h4"/></svg><h3>Linux</h3><span class="req">x86_64</span></div>
+        <a class="btn primary" data-file="YT-Music-MP3-linux-x86_64.AppImage" href="#">AppImage laden<small>alle Distros</small></a>
+        <p class="alt">Debian, Ubuntu, Mint: <a data-file="YT-Music-MP3-linux-amd64.deb" href="#">.deb-Paket</a></p>
+        <details><summary>So geht’s</summary><ol><li>AppImage: <code>chmod +x YT-Music-MP3-linux-x86_64.AppImage</code> und starten.</li><li>.deb: <code>sudo apt install ./YT-Music-MP3-linux-amd64.deb</code></li></ol></details>
+      </article>
+    </div>
+
+    <p class="others rv">macOS oder iPhone? Noch keine eigene App – aber die Web-Version läuft überall: <a href="https://github.com/Emre1001/Ytms-to-mp3#selbst-hosten" target="_blank" rel="noopener">selbst hosten mit Docker</a>. Alle Dateien und Prüfsummen: <a id="all-rel" href="https://github.com/Emre1001/Ytms-to-mp3/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>.</p>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section class="faq" id="faq">
+  <div class="wrap faq-grid">
+    <div>
+      <p class="eyebrow rv">Fragen</p>
+      <h2 class="h2 rv">Kurz gefragt.</h2>
+    </div>
+    <div class="qa">
+      <details class="rv"><summary>Brauche ich ein Konto oder ein Abo?</summary><div><p>Nein. Kein Konto bei uns, kein YouTube-Login, kein Premium. Link einfügen reicht.</p></div></details>
+      <details class="rv"><summary>Welche Qualität bekomme ich?</summary><div><p>Die App holt die beste Tonspur, die YouTube für den Titel anbietet (meist Opus mit rund 130–160 kbps) und wandelt sie in MP3 mit 128, 192, 256 oder 320 kbps. Ehrlich gesagt: 320 kbps macht eine Quelle nicht besser, als sie ist – 192 kbps ist ein guter Standard.</p></div></details>
+      <details class="rv"><summary>Wo landen die Dateien?</summary><div><p>Am Computer in <code>Downloads/YT Music MP3</code> (in den Einstellungen änderbar). Auf Android in <code>Musik/YT Music MP3</code>, ZIP-Dateien in <code>Download/YT Music MP3</code>.</p></div></details>
+      <details class="rv"><summary>Was passiert, wenn YouTube etwas ändert?</summary><div><p>Dann zieht <code>yt-dlp</code> meist innerhalb von Tagen nach. Die App prüft einmal täglich, ob es eine neue Version gibt, und installiert sie selbst – auf dem Computer beim nächsten Start, auf Android sofort. In den Einstellungen kannst du auch von Hand suchen.</p></div></details>
+      <details class="rv"><summary>Warum warnt Windows beim Installieren?</summary><div><p>Weil die App kein kostenpflichtiges Code-Signing-Zertifikat hat. Unter „Weitere Informationen“ kannst du sie trotzdem ausführen. Der komplette Code und jeder Build sind öffentlich auf GitHub einsehbar.</p></div></details>
+      <details class="rv"><summary>Darf ich das?</summary><div><p>Lade nur Inhalte herunter, an denen du die Rechte hast oder die ausdrücklich zum Download freigegeben sind, und beachte die Nutzungsbedingungen von YouTube. Das Tool ist für rechtmäßige, private Zwecke gedacht.</p></div></details>
+      <details class="rv"><summary>Gibt es eine Mac- oder iPhone-App?</summary><div><p>Noch nicht. Auf dem Mac läuft die Web-Version mit Docker oder direkt mit Python; das iPhone erreicht sie im selben WLAN über den Browser.</p></div></details>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <a class="brand" href="#top"><span class="mark"><svg viewBox="96 82 320 360" aria-hidden="true"><path d="M140 192v52M198 148v140M256 106v226M314 148v140M372 192v52M194 366l62 52 62-52"/></svg></span><span class="word">YT Music <em>→</em> MP3</span></a>
+    <nav aria-label="Fußzeile">
+      <a href="https://github.com/Emre1001/Ytms-to-mp3" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/Emre1001/Ytms-to-mp3/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/Emre1001/Ytms-to-mp3/blob/main/LICENSE" target="_blank" rel="noopener">MIT-Lizenz</a>
+      <a href="https://github.com/Emre1001/Ytms-to-mp3/issues" target="_blank" rel="noopener">Problem melden</a>
+    </nav>
+    <p>Nicht mit YouTube oder Google verbunden. Nur für Inhalte verwenden, an denen du die Rechte besitzt.</p>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

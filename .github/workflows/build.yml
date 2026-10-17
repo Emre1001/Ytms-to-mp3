@@ -2,7 +2,9 @@
 #   Windows  → YT-Music-MP3-windows-x64-Setup.exe
 #   Linux    → YT-Music-MP3-linux-x86_64.AppImage, YT-Music-MP3-linux-amd64.deb
 #   Android  → YT-Music-MP3-android-{arm64,armv7,x86_64}.apk
-# Pushing a tag like v2.1.0 additionally publishes them as a GitHub release.
+# A release (GitHub Releases, linked from the website) comes from either
+#   - pushing a tag like v2.1.0, or
+#   - Actions → "Apps bauen" → "Run workflow" with a version number.
 name: Apps bauen
 
 on:
@@ -11,6 +13,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Als Release veröffentlichen – Versionsnummer, z. B. 2.0.0 (leer = nur bauen)"
+        required: false
+        default: ""
 
 concurrency:
   group: build-${{ github.ref }}
@@ -20,6 +27,7 @@ permissions:
   contents: read
 
 env:
+  RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || inputs.release && format('v{0}', inputs.release) || '' }}
   QJS_URL: https://github.com/quickjs-ng/quickjs/releases/download/v0.17.0
 
 jobs:
@@ -88,7 +96,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "${GITHUB_REF_NAME#v}" > VERSION; fi
+          V="${RELEASE#v}"; V="${V#v}"
+          if [ -n "$V" ]; then echo "$V" > VERSION; fi
           echo "APP_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
@@ -133,7 +142,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "${GITHUB_REF_NAME#v}" > VERSION; fi
+          V="${RELEASE#v}"; V="${V#v}"
+          if [ -n "$V" ]; then echo "$V" > VERSION; fi
           echo "APP_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
@@ -177,7 +187,7 @@ jobs:
 
   release:
     name: Release veröffentlichen
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
     needs: [check, desktop, android]
     runs-on: ubuntu-latest
     permissions:
@@ -186,14 +196,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
+          pattern: desktop-*
           path: artifacts
           merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: android
+          path: artifacts
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la artifacts
           (cd artifacts && sha256sum * > SHA256SUMS.txt)
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
-            --title "YT Music → MP3 ${GITHUB_REF_NAME}" \
+          V="${RELEASE#v}"; V="v${V#v}"
+          gh release create "$V" artifacts/* \
+            --target "$GITHUB_SHA" \
+            --title "YT Music → MP3 $V" \
             --notes-file packaging/release-notes.md
